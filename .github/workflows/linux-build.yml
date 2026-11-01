@@ -3,39 +3,42 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/linux-build.yml'
+    paths: ['.github/workflows/linux-build.yml']
 permissions:
   contents: read
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout upstream OpenCode
+        uses: actions/checkout@v4
         with:
           repository: anomalyco/opencode
           ref: dev
           path: upstream
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
-      - name: Install
+      - name: Install dependencies
         working-directory: upstream
         run: bun install --frozen-lockfile
-      - name: Build Linux baseline
+      - name: Build Linux x64 baseline executable
         working-directory: upstream
-        run: bun run --cwd packages/opencode script/build.ts --single --skip-embed-web-ui
-      - name: Collect
+        env:
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Collect executable and checksum
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifact
-          file=$(find upstream/packages/opencode/dist -type f -path '*/bin/opencode' | head -1)
+          file=$(find upstream/packages/cli/dist -type f -path '*/bin/opencode' | head -1)
           test -n "$file"
           cp "$file" artifact/opencode-linux-baseline
           chmod +x artifact/opencode-linux-baseline
           (cd artifact && sha256sum opencode-linux-baseline > SHA256SUMS)
-          printf 'Unmodified upstream OpenCode baseline. Jarvis not implemented.\n' > artifact/BUILD_STATUS.txt
+          printf 'OpenCode baseline only. Jarvis modules not yet implemented.\n' > artifact/BUILD_STATUS.txt
+          ./artifact/opencode-linux-baseline --version
       - uses: actions/upload-artifact@v4
         with:
           name: opencode-linux-baseline
