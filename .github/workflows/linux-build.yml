@@ -1,0 +1,43 @@
+name: Linux baseline build (NOT Jarvis)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-build.yml'
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: anomalyco/opencode
+          ref: dev
+          path: upstream
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - name: Install
+        working-directory: upstream
+        run: bun install --frozen-lockfile
+      - name: Build Linux baseline
+        working-directory: upstream
+        run: bun run --cwd packages/opencode script/build.ts --single --skip-embed-web-ui
+      - name: Collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          file=$(find upstream/packages/opencode/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$file"
+          cp "$file" artifact/opencode-linux-baseline
+          chmod +x artifact/opencode-linux-baseline
+          (cd artifact && sha256sum opencode-linux-baseline > SHA256SUMS)
+          printf 'Unmodified upstream OpenCode baseline. Jarvis not implemented.\n' > artifact/BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-linux-baseline
+          path: artifact/
+          if-no-files-found: error
