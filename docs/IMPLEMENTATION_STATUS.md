@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-**Release:** 0.1.0-alpha.1 (Phase 0 verified; Phase 1 underway)
+**Release:** 0.1.0-alpha.1 (Phase 0 baseline verified; Phase 1 foundation and Phase 2 scheduling core underway)
 
 **Baseline:** OpenCode upstream dev, SHA `97a71f0cc624f128906224ca73d9e4016b43fde0` (from first build log). The baseline is **not** an integrated Jarvis fork.
 
@@ -26,6 +26,7 @@
 - [ ] Fallback model and first-token latency tests.
 
 ### Phase 2 — workers
+- [x] Standalone bounded four-slot task scheduler with fifth-task queue implemented and unit tests added (not yet integrated with OpenCode sessions).
 - [ ] Four concurrent OpenCode sessions, fifth queued.
 - [ ] Internal session create/send/status/peek/interrupt/compact.
 - [ ] Agent/model selection and switching.
@@ -55,3 +56,7 @@
 - [ ] Recovery, automated acceptance tests, actual Linux Jarvis binary and downloadable release.
 
 No audio/voice/mobile work is included.
+
+## Change tracking
+- `0.1.0-alpha.1`: Phase 1 persona/config/expression foundation and independent bounded worker scheduler. No integrated Jarvis binary yet.
+- GitHub Actions runs for `jarvis-unit.yml` are the acceptance evidence for foundation tests. A checked test implementation item must still be supported by a successful run before its test status is considered verified.
