@@ -13,13 +13,15 @@ Version: **0.2.0-alpha.1** (Linux HTTP-bridge prototype; **NOT** the full in-pro
 
 ## Remaining mandatory specifications
 - [ ] Import full OpenCode upstream sources into this repository and integrate internal services directly (HTTP adapter is temporary).
-- [ ] Jarvis brain running separately in OpenCode with persona, memory context and native model resolver.
+- [x] Separate conversational brain session implemented via HTTP adapter; includes persona and memory-card context (Linux CI build/smoke passed at commit `1d64e323`).
+- [ ] Native in-process brain integrated into OpenCode with model resolver, confirmed thinking-off and reliable fallback.
 - [ ] Live model reasoning-disabled and fallback verification.
 - [ ] Internal worker control tools: status, follow-up, /btw, interrupt, agent/model switching, compaction, command dispatch.
 - [ ] Prompt orchestration: Jarvis itself chooses how and when to delegate autonomously.
 - [ ] Continuous OpenCode event subscription and meaningful proactive notifications.
 - [ ] Incremental session summarization, trigram fallback, user profile UI management.
 - [ ] Dynamic agent/plugin creation in fork, full code-enforced permission gate and audit logs.
+- [x] Basic text chat panel for the separate brain added (not yet end-to-end model tested).
 - [ ] Full WebGL particle orb, worker satellite rings, memory panel, interactive worker session navigation.
 - [ ] TUI status, restart recovery of in-flight work, end-to-end acceptance tests.
 - [ ] Fully integrated Linux Jarvis executable and release.
@@ -40,3 +42,8 @@ OpenCode server must be started separately (for compatible legacy `/session` end
 ```
 
 **Compatibility warning:** Modern OpenCode 2.2.x might expose `/api/session` instead of `/session`; task delegation will fail until the adapter is updated for the installed server API. Do not expose either server publicly without authentication.
+
+## Latest verified change
+- Commit `1d64e3238b0d19cec36a2c37233e59ee3bf6f98a`: dedicated HTTP-backed Jarvis brain session and simple chat UI.
+- CI: Jarvis foundation tests `41333662073` PASS; Linux prototype compile and smoke test `41333662053` PASS.
+- These CI results do NOT verify live inference, full delegation, internal OpenCode embedding, or the final plan.
