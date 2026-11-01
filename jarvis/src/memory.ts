@@ -53,8 +53,8 @@ export class MemoryLedger {
     const tokens = input.normalize("NFKC").match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 8) ?? []
     if (!tokens.length) return []
     const query = tokens.map(t => '"' + t.replaceAll('"','') + '"*').join(" OR ")
-    return this.db.query(`SELECT cards.session_id AS sessionId,title,goal,keywords,state,
-      outcome,files,updated_at AS updatedAt FROM cards JOIN cards_fts
+    return this.db.query(`SELECT cards.session_id AS sessionId,cards.title AS title,cards.goal AS goal,cards.keywords AS keywords,cards.state AS state,
+      cards.outcome AS outcome,cards.files AS files,cards.updated_at AS updatedAt FROM cards JOIN cards_fts
       ON cards.rowid=cards_fts.rowid WHERE cards_fts MATCH ?
       ORDER BY bm25(cards_fts),updated_at DESC LIMIT ?`).all(query, Math.max(1, Math.min(limit, 10))) as MemoryCard[]
   }
