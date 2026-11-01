@@ -1,0 +1,44 @@
+name: Jarvis Linux prototype
+on:
+  push:
+    branches: [main]
+    paths: ['jarvis/**', 'VERSION', 'docs/IMPLEMENTATION_STATUS.md', '.github/workflows/jarvis-linux.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Run unit tests
+        run: bun test jarvis/test
+      - name: Compile executable
+        run: |
+          mkdir -p dist
+          bun build --compile ./jarvis/src/server.ts --outfile ./dist/jarvis-linux-x64
+          chmod +x ./dist/jarvis-linux-x64
+      - name: Smoke-test the server
+        run: |
+          set -euo pipefail
+          JARVIS_DB=:memory: ./dist/jarvis-linux-x64 > /tmp/jarvis.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" || true' EXIT
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:4317/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          cat /tmp/health.json
+          curl -fsS http://127.0.0.1:4317/ | grep -q 'J A R V I S'
+      - name: Add checksums and notes
+        run: |
+          cd dist
+          sha256sum jarvis-linux-x64 > SHA256SUMS
+          printf 'Jarvis v0.2 alpha PROTOTYPE. Requires running OpenCode backend on port 4096. HTTP adapter, not internal fork.\n' > BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-linux-prototype
+          path: dist/
+          if-no-files-found: error
