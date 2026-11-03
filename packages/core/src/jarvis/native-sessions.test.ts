@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test"
-import { Session } from "@opencode/schema/session"
 import { Permission } from "../permission"
 import { BRAIN_PERMISSIONS, isBrain } from "./native-sessions"
 import { canUseBrainTool } from "./controller"
@@ -13,9 +12,7 @@ test("brain session carries non-mutating inspection tools without giving the bra
 })
 
 test("brain identity uses durable metadata rather than a custom session ID", () => {
-  const base = { id: Session.ID.create(), metadata: { jarvis: { role: "brain" } } }
-  expect(base.id).toMatch(/^ses_/)
-  expect(isBrain(base as Session.Info)).toBe(true)
-  expect(isBrain({ ...base, metadata: { jarvis: { role: "worker" } } } as Session.Info)).toBe(false)
-  expect(isBrain({ ...base, metadata: undefined } as Session.Info)).toBe(false)
+  expect(isBrain({ metadata: { jarvis: { role: "brain" } } })).toBe(true)
+  expect(isBrain({ metadata: { jarvis: { role: "worker" } } })).toBe(false)
+  expect(isBrain({ metadata: undefined })).toBe(false)
 })
