@@ -19,7 +19,7 @@ export const BRAIN_PERMISSIONS = [...JarvisAgent.permissions]
 export const BrainMetadata = Schema.Struct({
   jarvis: Schema.Struct({ role: Schema.Literal("brain") }),
 })
-export const isBrain = (session: SessionSchema.Info) => Schema.is(BrainMetadata)(session.metadata)
+export const isBrain = (session: Pick<SessionSchema.Info, "metadata">) => Schema.is(BrainMetadata)(session.metadata)
 
 
 export const makeNativeSessions = Effect.fn("Jarvis.makeNativeSessions")(function* () {
