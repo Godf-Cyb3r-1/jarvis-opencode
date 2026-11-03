@@ -9,6 +9,7 @@ import { Model as ModelSchema } from "@opencode/schema/model"
 import { Session } from "../session.js"
 import { SessionSchema } from "../session/schema.js"
 import * as JarvisAgent from "./agent.js"
+import { JarvisScheduler } from "./controller.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -24,6 +25,21 @@ export const Plugin = {
     const models = yield* Model.Service
     // Prevent parallel tool calls from slipping past the four-slot capacity check.
     const gate = yield* Semaphore.make(1)
+    // Queue tasks per OpenCode plugin instance; do not start a fifth prompt until a slot releases.
+    const scheduler = new JarvisScheduler<{ sessionID: SessionSchema.ID; instruction: string }>(
+      MaxActiveWorkers,
+      async (task, signal) => {
+        if (signal.aborted) return
+        const abort = () => { void Effect.runPromise(sessions.interrupt(task.input.sessionID)).catch(() => {}) }
+        signal.addEventListener("abort", abort, { once: true })
+        try {
+          await Effect.runPromise(sessions.prompt({ sessionID: task.input.sessionID, text: task.input.instruction }))
+          await Effect.runPromise(sessions.wait(task.input.sessionID))
+        } finally {
+          signal.removeEventListener("abort", abort)
+        }
+      },
+    )
 
     const authorize = Effect.fn("JarvisControl.authorize")(function* (sessionID: SessionSchema.ID, agent: Agent.ID) {
       if (agent !== JarvisAgent.ID)
@@ -89,7 +105,7 @@ export const Plugin = {
         output: Schema.Struct({
           sessionID: SessionSchema.ID,
           agent: Schema.String,
-          status: Schema.Literal("running"),
+          status: Schema.Literals(["running", "queued"]),
         }),
         execute: (input, context) =>
           gate.withPermits(1)(Effect.gen(function* () {
@@ -109,11 +125,6 @@ export const Plugin = {
                 return yield* new ToolFailure({ message: "Requested worker model is unavailable: " + input.model })
               workerModel = ModelSchema.Ref.parse(input.model)
             }
-            const children = yield* sessions.list({ parentID: context.sessionID, limit: 100 })
-            const active = yield* sessions.active
-            const running = children.data.filter((item) => isWorkerOf(item, context.sessionID) && active.has(item.id))
-            if (running.length >= MaxActiveWorkers)
-              return yield* new ToolFailure({ message: "All four worker slots are busy. This milestone does not yet persist or start queued tasks. Do not claim a fifth was queued." })
             const session = yield* sessions.create({
               parentID: context.sessionID,
               title: input.title.trim() || input.instruction.slice(0, 70),
@@ -124,10 +135,13 @@ export const Plugin = {
               // An empty session ruleset lets the worker agent's own permissions apply.
               permissions: [],
             })
-            yield* sessions.prompt({ sessionID: session.id, text: input.instruction })
-            return { sessionID: session.id, agent: selected.id, status: "running" as const }
+            const task = scheduler.enqueue({
+              id: session.id,
+              input: { sessionID: session.id, instruction: input.instruction },
+            })
+            return { sessionID: session.id, agent: String(selected.id), status: task.status === "queued" ? "queued" as const : "running" as const }
           })).pipe(
-            Effect.map((output) => ({ output, content: "Worker started: " + output.sessionID + " (" + output.agent + ")" })),
+            Effect.map((output) => ({ output, content: "Worker " + output.status + ": " + output.sessionID + " (" + output.agent + ")" })),
             Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to start worker", error })),
           ),
       })
@@ -139,17 +153,18 @@ export const Plugin = {
         output: Schema.Struct({
           sessionID: SessionSchema.ID,
           title: Schema.optionalKey(Schema.String),
-          status: Schema.Literals(["running", "idle"]),
+          status: Schema.Literals(["running", "idle", "queued", "completed", "failed", "cancelled"]),
           outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
         }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
           const info = yield* worker(context.sessionID, input.sessionID)
           const active = yield* sessions.active
+          const scheduled = scheduler.get(info.id)
           return {
             sessionID: info.id,
             title: info.title,
-            status: active.has(info.id) ? "running" as const : "idle" as const,
+            status: scheduled?.status ?? (active.has(info.id) ? "running" as const : "idle" as const),
             outcome: info.outcome,
           }
         }).pipe(
@@ -168,6 +183,8 @@ export const Plugin = {
           yield* worker(context.sessionID, input.sessionID)
           if (!input.instruction.trim())
             return yield* new ToolFailure({ message: "Follow-up instruction cannot be empty." })
+          if (scheduler.get(input.sessionID)?.status === "queued")
+            return yield* new ToolFailure({ message: "Worker is queued. Wait for it to start before sending follow-ups." })
           yield* sessions.prompt({ sessionID: input.sessionID, text: input.instruction })
           return { sessionID: input.sessionID, admitted: true }
         }).pipe(
@@ -271,7 +288,8 @@ export const Plugin = {
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
           yield* worker(context.sessionID, input.sessionID)
-          const interrupted = yield* sessions.interrupt(input.sessionID)
+          const cancelled = scheduler.cancel(input.sessionID)
+          const interrupted = cancelled || (yield* sessions.interrupt(input.sessionID))
           return { sessionID: input.sessionID, interrupted }
         }).pipe(
           Effect.map((output) => ({ output, content: output.interrupted ? "Interrupted worker " + output.sessionID : "Worker was not running" })),
