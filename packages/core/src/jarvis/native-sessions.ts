@@ -70,6 +70,7 @@ export const makeNativeSessions = Effect.fn("Jarvis.makeNativeSessions")(functio
       parentID: input.parentID,
       title: input.title,
       agent: selected.id,
+      metadata: { jarvis: { role: "worker" } },
       ...(input.model ? { model: input.model } : {}),
     })
     yield* sessions.prompt({ sessionID: worker.id, text: input.instruction })
