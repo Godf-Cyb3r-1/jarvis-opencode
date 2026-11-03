@@ -10,11 +10,11 @@ Jarvis previously acted as a conversational primary agent but had no model-calla
 - `session_status`: read a worker's active/idle status without including the full transcript.
 - `session_send`: add requirements to a worker.
 - `session_interrupt`: stop a worker without interrupting the Jarvis conversation.
-- The actions are available to the Jarvis primary agent, registered as internal OpenCode tools, and validate the caller's identity and session ownership. Four active workers are permitted; a fifth request reports capacity exhaustion **without falsely saying it was queued**.
+- The actions are available to the Jarvis primary agent, registered as internal OpenCode tools, and validate the caller's identity and session ownership. Four active workers are permitted. A fifth task creates a canonical worker session and is **actually queued**; its first prompt is admitted automatically when an active worker completes. The queue is currently in memory and will not survive process restart.
 
 ## Not yet completed
 
-The full Phase 2 completion criterion from the PDF requires a fifth-task queue; this M2A slice does NOT implement queue persistence or automatic fifth-task scheduling. It also does not yet expose session_peek (/btw), compact, agent/model switching, command_run, or the event-driven proactive notifications. Do not mark Phase 2 complete. Live worker execution is a user-machine acceptance test, not confirmed by CI alone.
+This milestone now includes an in-memory fifth-task queue and native session_peek (/btw), compact, agent/model switching, command_run, agent_list and model_list. It does not yet implement crash-safe queue recovery, automatic event-driven proactive notifications, agent_create/plugin_create, or live multi-worker acceptance testing. Do not mark Phase 2 complete. Live worker execution is a user-machine acceptance test, not confirmed by CI alone.
 
 ## Download and test (Linux x64)
 
