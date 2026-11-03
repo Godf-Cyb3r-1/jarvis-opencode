@@ -18,10 +18,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.4'
-      - name: Verify controller isolation + queue unit tests
-        run: cd packages/core && bun test src/jarvis/controller.test.ts
       - name: Install pinned workspace dependencies
         run: bun install --frozen-lockfile
+      - name: Verify Jarvis controller and model resolver unit tests
+        run: cd packages/core && bun test src/jarvis/
       - name: Build original OpenCode Linux baseline
         env:
           OPENCODE_VERSION: '2.2.5'
