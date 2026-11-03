@@ -1,0 +1,37 @@
+name: Bootstrap pinned OpenCode source
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bootstrap-source.yml']
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/checkout@v4
+        with:
+          repository: anomalyco/opencode
+          ref: ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547
+          path: _upstream
+          persist-credentials: false
+      - name: Import pinned OpenCode monorepo (excluding upstream CI workflows)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C _upstream rev-parse HEAD)" = "ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547"
+          rsync -a --exclude='.git/' --exclude='node_modules/' --exclude='dist/' \
+            --exclude='.github/workflows/' --exclude='_upstream/' _upstream/ ./
+          printf '%s\n' ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547 > OPENCODE_UPSTREAM_SHA
+          rm -rf _upstream
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "build: import OpenCode 2.2.5 source pinned to ace4bbdf1ec8"
+          git push origin HEAD:main
+          echo "Pinned OpenCode source imported. Jarvis features are not complete." >> "$GITHUB_STEP_SUMMARY"
