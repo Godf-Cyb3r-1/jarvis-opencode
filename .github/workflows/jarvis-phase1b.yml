@@ -46,6 +46,12 @@ jobs:
           test "$(artifact/jarvis-opencode-linux-x64 --version)" = "opencode v2.2.5"
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
           printf 'Phase 1B: Native Jarvis primary agent and persona. Full autonomous worker tool-calling is not implemented.\n' > artifact/BUILD_STATUS.txt
+      - name: Confirm Jarvis is visible through the real OpenCode CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone > /tmp/jarvis-agents.json
+          jq -e '. | any(.id == "jarvis" and .mode == "primary")' /tmp/jarvis-agents.json
       - uses: actions/upload-artifact@v4
         with:
           name: jarvis-phase1b-linux-x64
