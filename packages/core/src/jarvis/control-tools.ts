@@ -176,6 +176,93 @@ export const Plugin = {
         ),
       })
       editor.add({
+        name: "session_peek",
+        options: { codemode: false },
+        description: "Ask an owned worker an out-of-band /btw-style side question without modifying its work history or interrupting the task.",
+        input: Schema.Struct({ sessionID: SessionSchema.ID, question: Schema.String }),
+        output: Schema.Struct({ sessionID: SessionSchema.ID, reply: Schema.String }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          yield* worker(context.sessionID, input.sessionID)
+          if (!input.question.trim()) return yield* new ToolFailure({ message: "Side question is empty" })
+          const reply = yield* sessions.generate({ sessionID: input.sessionID, prompt: input.question })
+          return { sessionID: input.sessionID, reply }
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.reply })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Worker side question failed", error })),
+        ),
+      })
+      editor.add({
+        name: "session_switch_agent",
+        options: { codemode: false },
+        description: "Change an owned worker's OpenCode agent. Never select Jarvis as a worker.",
+        input: Schema.Struct({ sessionID: SessionSchema.ID, agent: Schema.String }),
+        output: Schema.Struct({ sessionID: SessionSchema.ID, agent: Schema.String }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          yield* worker(context.sessionID, input.sessionID)
+          const selected = yield* agents.select(Agent.ID.make(input.agent))
+          if (!selected.info || selected.id === JarvisAgent.ID)
+            return yield* new ToolFailure({ message: "Invalid worker agent" })
+          yield* sessions.switchAgent({ sessionID: input.sessionID, agent: selected.id })
+          return { sessionID: input.sessionID, agent: String(selected.id) }
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Worker agent updated to " + output.agent })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to change worker agent", error })),
+        ),
+      })
+      editor.add({
+        name: "session_switch_model",
+        options: { codemode: false },
+        description: "Select a different available model for an owned worker.",
+        input: Schema.Struct({ sessionID: SessionSchema.ID, model: Schema.String }),
+        output: Schema.Struct({ sessionID: SessionSchema.ID, model: Schema.String }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          yield* worker(context.sessionID, input.sessionID)
+          const available = yield* models.available()
+          if (!available.some((model) => model.providerID + "/" + model.id === input.model))
+            return yield* new ToolFailure({ message: "Requested worker model is not available" })
+          yield* sessions.switchModel({ sessionID: input.sessionID, model: ModelSchema.Ref.parse(input.model) })
+          return { sessionID: input.sessionID, model: input.model }
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Worker model updated to " + output.model })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to change worker model", error })),
+        ),
+      })
+      editor.add({
+        name: "session_compact",
+        options: { codemode: false },
+        description: "Request context compaction for a worker as the task history grows.",
+        input: Schema.Struct({ sessionID: SessionSchema.ID }),
+        output: Schema.Struct({ sessionID: SessionSchema.ID, requested: Schema.Boolean }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          yield* worker(context.sessionID, input.sessionID)
+          yield* sessions.compact({ sessionID: input.sessionID })
+          return { sessionID: input.sessionID, requested: true }
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Compaction requested for " + output.sessionID })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Worker compaction failed", error })),
+        ),
+      })
+      editor.add({
+        name: "command_run",
+        options: { codemode: false },
+        description: "Execute an existing registered OpenCode slash command in an owned worker session. Worker tool permissions still apply.",
+        input: Schema.Struct({ sessionID: SessionSchema.ID, command: Schema.String, text: Schema.String }),
+        output: Schema.Struct({ sessionID: SessionSchema.ID, admitted: Schema.Boolean }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          yield* worker(context.sessionID, input.sessionID)
+          yield* sessions.command({ sessionID: input.sessionID, command: input.command, text: input.text })
+          return { sessionID: input.sessionID, admitted: true }
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Command admitted for " + output.sessionID })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Worker command failed", error })),
+        ),
+      })
+      editor.add({
         name: "session_interrupt",
         options: { codemode: false },
         description: "Interrupt a worker owned by the calling Jarvis session. Does not interrupt the brain.",
