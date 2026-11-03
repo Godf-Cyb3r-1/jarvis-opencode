@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.1.0-dev.1** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.1.0-dev.2** (controller foundation, NOT a usable Jarvis assistant)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -13,13 +13,14 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 - [x] Import pinned full upstream OpenCode 2.2.5 source into main
 - [x] Inspect real source locations and record `JARVIS_NOTES.md`
 - [x] Standalone Jarvis controller unit tests passed
-- [ ] Linux compilation of imported source and executable smoke tests passed
+- [x] Linux baseline compilation, version check and artifact passed: [run 41692454194](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41692454194), build commit `bda03874437e1970117c983384c89e4956094926`
 
 ### 1 — Brain
 - [x] Versioned initial persona contract
 - [x] Fail-closed control-tool allowlist implemented and unit tested
 - [ ] Wire Jarvis conversation into native OpenCode Session/Agent/Provider services
-- [ ] Resolve live model, verify thinking disabled, fallback and latency
+- [x] Implement Model.Service-based model resolution and explicit fallback selection (unit tested)
+- [ ] Verify live model availability, thinking disabled, fallback and latency
 - [ ] Enforce no-developer-tools from actual model tool registry
 
 ### 2 — Native worker orchestration
@@ -53,3 +54,7 @@ No custom Web UI, WebGL orb, standalone HTTP bridge, microphone, STT, TTS or des
 
 ## Acceptance policy
 Checking a TypeScript unit test is not evidence of a working native OpenCode worker or conversational brain. No stage is considered delivered until its real end-to-end integration test passes.
+
+## Initial version history
+- `0.1.0-dev.1`: complete OpenCode source import, controller policy and scheduler unit tests.
+- `0.1.0-dev.2`: native OpenCode Model.Service resolver and passing pinned Linux baseline build. Jarvis brain/worker service integration is **not** complete.
