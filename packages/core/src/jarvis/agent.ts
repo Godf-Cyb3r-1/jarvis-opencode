@@ -16,6 +16,10 @@ export const permissions = [
   { action: "glob", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
   { action: "question", resource: "*", effect: "allow" },
+  { action: "session_create", resource: "*", effect: "allow" },
+  { action: "session_status", resource: "*", effect: "allow" },
+  { action: "session_send", resource: "*", effect: "allow" },
+  { action: "session_interrupt", resource: "*", effect: "allow" },
 ] as const
 
 export const definition = (): Agent.Info => ({
