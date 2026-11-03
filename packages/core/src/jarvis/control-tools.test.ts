@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
 import { Session } from "@opencode/schema/session"
-import { Agent } from "@opencode/schema/agent"
 import { Permission } from "../permission"
 import * as JarvisAgent from "./agent"
 import { isWorkerOf, MaxActiveWorkers, Plugin } from "./control-tools"
