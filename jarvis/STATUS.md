@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.1.0-dev.2** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.1.0-dev.3** (controller foundation, NOT a usable Jarvis assistant)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -18,14 +18,16 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 ### 1 — Brain
 - [x] Versioned initial persona contract
 - [x] Fail-closed control-tool allowlist implemented and unit tested
-- [ ] Wire Jarvis conversation into native OpenCode Session/Agent/Provider services
+- [x] Implement typechecked native Session.Service adapter to create an isolated brain session with denied developer tools (M1A, PR #2)
+- [ ] Wire live model-backed Jarvis conversation and persona agent into native session runtime
 - [x] Implement Model.Service-based model resolution and explicit fallback selection (unit tested)
 - [ ] Verify live model availability, thinking disabled, fallback and latency
 - [ ] Enforce no-developer-tools from actual model tool registry
 
 ### 2 — Native worker orchestration
 - [x] Four-slot scheduling and fifth-task queue unit-tested
-- [ ] Wire actual native OpenCode session create/send/peek/interrupt/etc
+- [x] Implement native worker session create, prompt/send, status, wait, interrupt, switch model and agent adapters (M1A)
+- [ ] Wire scheduler to the native adapter and add /btw peek, compact, commands, event handling
 - [ ] Select workers' agents and models
 - [ ] Verify four real independent concurrent sessions and dynamic steering
 - [ ] Persist queued/running worker states across restart
@@ -58,3 +60,5 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 ## Initial version history
 - `0.1.0-dev.1`: complete OpenCode source import, controller policy and scheduler unit tests.
 - `0.1.0-dev.2`: native OpenCode Model.Service resolver and passing pinned Linux baseline build. Jarvis brain/worker service integration is **not** complete.
+
+- `0.1.0-dev.3`: Phase 1A native Session.Service adapter, separate brain and worker sessions, deny-all brain permissions. [CI run 41693895844](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41693895844) PASS (8 tests and core typecheck), [PR #2](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/2), merge `43913d6bc168d031fe88b8dd5b09a4351eeebabb`. **Not yet user-executable Jarvis**.
