@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.1.0-dev.4** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.1.0-dev.5** (controller foundation, NOT a usable Jarvis assistant)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -23,7 +23,7 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 - [ ] Verify a live model-backed Jarvis conversation on Linux (provider credentials required)
 - [x] Implement Model.Service-based model resolution and explicit fallback selection (unit tested)
 - [ ] Verify live model availability, thinking disabled, fallback and latency
-- [x] Set deny-all developer permissions on registered native Jarvis agent (configuration and tests)
+- [x] Give native Jarvis agent read-only inspection permissions (read/glob/grep/question) while keeping mutation tools denied, verified with policy tests
 - [ ] Register actual model-callable orchestration tools for Jarvis and verify their permission boundaries
 
 ### 2 — Native worker orchestration
@@ -66,3 +66,5 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 - `0.1.0-dev.3`: Phase 1A native Session.Service adapter, separate brain and worker sessions, deny-all brain permissions. [CI run 41693895844](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41693895844) PASS (8 tests and core typecheck), [PR #2](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/2), merge `43913d6bc168d031fe88b8dd5b09a4351eeebabb`. **Not yet user-executable Jarvis**.
 
 - `0.1.0-dev.4`: M1B native default Jarvis primary agent, embedded persona, configurable free Flash model, worker agent separation. [Successful CI 41696527733](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41696527733) (tests, core typecheck, Linux compile, agent CLI smoke). Live inference and thinking-disabled behavior remain unverified. See `jarvis/MILESTONE_1B.md` and `jarvis/check-brain.sh`.
+
+- `0.1.0-dev.5`: Gateway 429 request-shape fix: non-mutating brain tools, role-tagged canonical Session.Service-created IDs and reuse in native adapter. [PR #4](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/4), merge `3a31100f2beea4e1fe695c8c7136d9ce5c281c08`. [CI 41700553686](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41700553686) PASS. **Requires local live provider verification; normal CLI mode does not exercise createBrain session reuse.**
