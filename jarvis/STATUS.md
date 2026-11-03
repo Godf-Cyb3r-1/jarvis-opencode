@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.1.0-dev.5** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.2.0-dev.1** (controller foundation, NOT a usable Jarvis assistant)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -24,12 +24,14 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 - [x] Implement Model.Service-based model resolution and explicit fallback selection (unit tested)
 - [ ] Verify live model availability, thinking disabled, fallback and latency
 - [x] Give native Jarvis agent read-only inspection permissions (read/glob/grep/question) while keeping mutation tools denied, verified with policy tests
-- [ ] Register actual model-callable orchestration tools for Jarvis and verify their permission boundaries
+- [x] Register model-callable native delegation/discovery/control tools and verify compiled source, permissions and ownership tests (M2; PR #5)
+- [ ] Verify live model-directed Jarvis delegation using a configured provider
 
 ### 2 — Native worker orchestration
 - [x] Four-slot scheduling and fifth-task queue unit-tested
 - [x] Implement native worker session create, prompt/send, status, wait, interrupt, switch model and agent adapters (M1A)
-- [ ] Wire scheduler to the native adapter and add /btw peek, compact, commands, event handling
+- [x] Wire the four-slot scheduler to native worker sessions, queue fifth task, and add /btw peek, compact, commands and agent/model switches (in memory)
+- [ ] Add server-event-driven proactive notifications and crash-safe queue recovery
 - [ ] Select workers' agents and models
 - [ ] Verify four real independent concurrent sessions and dynamic steering
 - [ ] Persist queued/running worker states across restart
@@ -68,3 +70,5 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 - `0.1.0-dev.4`: M1B native default Jarvis primary agent, embedded persona, configurable free Flash model, worker agent separation. [Successful CI 41696527733](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41696527733) (tests, core typecheck, Linux compile, agent CLI smoke). Live inference and thinking-disabled behavior remain unverified. See `jarvis/MILESTONE_1B.md` and `jarvis/check-brain.sh`.
 
 - `0.1.0-dev.5`: Gateway 429 request-shape fix: non-mutating brain tools, role-tagged canonical Session.Service-created IDs and reuse in native adapter. [PR #4](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/4), merge `3a31100f2beea4e1fe695c8c7136d9ce5c281c08`. [CI 41700553686](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41700553686) PASS. **Requires local live provider verification; normal CLI mode does not exercise createBrain session reuse.**
+
+- `0.2.0-dev.1`: Native Jarvis controller tools and in-memory 4-worker scheduler, fifth queued. [PR #5](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/5), merged at `44949aab173bd2f2c8d560d69827144a6c4d98a7`; [CI 41704040467](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41704040467) PASS for source commit `edaf5688`. Live model-backed delegation and restart recovery remain acceptance items. See `jarvis/MILESTONE_2A.md`.
