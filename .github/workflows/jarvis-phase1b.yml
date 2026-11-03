@@ -1,0 +1,50 @@
+name: Jarvis Phase 1B native brain agent
+on:
+  push:
+    branches: ['jarvis/phase1b-brain-agent']
+    paths:
+      - 'packages/core/src/agent.ts'
+      - 'packages/core/src/jarvis/**'
+      - 'jarvis/persona.md'
+      - '.github/workflows/jarvis-phase1b.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install pinned dependencies
+        run: bun install --frozen-lockfile
+      - name: Jarvis foundation and brain agent tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: Typecheck whole OpenCode core
+        run: bun run --cwd packages/core typecheck
+      - name: Compile integrated Linux executable
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Verify binary version and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$file"
+          mkdir -p artifact
+          cp "$file" artifact/jarvis-opencode-linux-x64
+          chmod +x artifact/jarvis-opencode-linux-x64
+          test "$(artifact/jarvis-opencode-linux-x64 --version)" = "opencode v2.2.5"
+          (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
+          printf 'Phase 1B: Native Jarvis primary agent and persona. Full autonomous worker tool-calling is not implemented.\n' > artifact/BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-phase1b-linux-x64
+          path: artifact/
+          if-no-files-found: error
