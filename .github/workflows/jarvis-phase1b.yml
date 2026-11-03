@@ -8,6 +8,9 @@ on:
       - 'jarvis/persona.md'
       - '.github/workflows/jarvis-phase1b.yml'
   workflow_dispatch:
+concurrency:
+  group: jarvis-phase1b-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
