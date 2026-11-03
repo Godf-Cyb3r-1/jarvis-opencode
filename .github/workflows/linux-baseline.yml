@@ -1,10 +1,13 @@
-name: Jarvis OpenCode Linux milestone build
+name: Jarvis M2 Linux release
 on:
   push:
     branches: [main]
     paths:
       - 'packages/core/src/jarvis/**'
       - 'packages/core/src/agent.ts'
+      - 'packages/core/src/plugin/internal.ts'
+      - 'jarvis/persona.md'
+      - '.github/workflows/linux-baseline.yml'
       - 'jarvis/**'
       - '.github/workflows/linux-baseline.yml'
   workflow_dispatch:
@@ -47,7 +50,7 @@ jobs:
           echo "$reported"
           test "$reported" = "opencode v2.2.5"
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
-          printf "Jarvis 0.1.0-dev.4 | OpenCode v2.2.5\nNative primary brain agent and persona; autonomous delegation tools NOT yet installed.\n" > artifact/BUILD_STATUS.txt
+          printf "Jarvis 0.2.0-dev.1 | OpenCode v2.2.5\nNative model-callable worker-control tools; in-memory four-worker queue. Live provider testing and restart recovery are pending.\n" > artifact/BUILD_STATUS.txt
       - name: Verify compiled native Jarvis agent registration
         shell: bash
         run: |
@@ -55,6 +58,6 @@ jobs:
           jq -e 'any(.id == "jarvis" and .mode == "primary")' /tmp/agents.json
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-m1b-linux-x64
+          name: jarvis-m2-linux-x64
           path: artifact/
           if-no-files-found: error
