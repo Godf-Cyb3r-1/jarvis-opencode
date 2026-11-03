@@ -6,7 +6,6 @@ import { Effect, Schema, Semaphore } from "effect"
 import { Agent } from "../agent.js"
 import { Session } from "../session.js"
 import { SessionSchema } from "../session/schema.js"
-import { Permission } from "../permission.js"
 import * as JarvisAgent from "./agent.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
@@ -82,7 +81,10 @@ export const Plugin = {
             })
             yield* sessions.prompt({ sessionID: session.id, text: input.instruction })
             return { sessionID: session.id, agent: selected.id, status: "running" as const }
-          })),
+          })).pipe(
+            Effect.map((output) => ({ output, content: "Worker started: " + output.sessionID + " (" + output.agent + ")" })),
+            Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to start worker", error })),
+          ),
       })
       editor.add({
         name: "session_status",
@@ -105,7 +107,10 @@ export const Plugin = {
             status: active.has(info.id) ? "running" as const : "idle" as const,
             outcome: info.outcome,
           }
-        }),
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Worker " + output.sessionID + ": " + output.status })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to read worker status", error })),
+        ),
       })
       editor.add({
         name: "session_send",
@@ -120,7 +125,10 @@ export const Plugin = {
             return yield* new ToolFailure({ message: "Follow-up instruction cannot be empty." })
           yield* sessions.prompt({ sessionID: input.sessionID, text: input.instruction })
           return { sessionID: input.sessionID, admitted: true }
-        }),
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Follow-up admitted for " + output.sessionID })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to send worker follow-up", error })),
+        ),
       })
       editor.add({
         name: "session_interrupt",
@@ -133,7 +141,10 @@ export const Plugin = {
           yield* worker(context.sessionID, input.sessionID)
           const interrupted = yield* sessions.interrupt(input.sessionID)
           return { sessionID: input.sessionID, interrupted }
-        }),
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.interrupted ? "Interrupted worker " + output.sessionID : "Worker was not running" })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to interrupt worker", error })),
+        ),
       })
     })
   }),
