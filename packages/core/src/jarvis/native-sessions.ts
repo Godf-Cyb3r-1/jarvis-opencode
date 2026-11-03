@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 import { Session } from "../session.js"
 import { Agent } from "../agent.js"
-import { Model } from "../model.js"
 import { SessionSchema } from "../session/schema.js"
 import { Model as ModelSchema } from "@opencode/schema/model"
 import { resolveBrainModel } from "./model-resolver.js"
