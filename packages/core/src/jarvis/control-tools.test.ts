@@ -6,7 +6,7 @@ import { isWorkerOf, MaxActiveWorkers, Plugin } from "./control-tools"
 
 test("Jarvis has explicit native control tools but cannot edit or run a shell", () => {
   const rules = JarvisAgent.definition().permissions
-  for (const name of ["agent_list", "model_list", "session_create", "session_status", "session_send", "session_interrupt"])
+  for (const name of ["agent_list", "model_list", "session_create", "session_status", "session_send", "session_interrupt", "session_peek", "session_switch_agent", "session_switch_model", "session_compact", "command_run"])
     expect(Permission.evaluate(name, "*", rules).effect).toBe("allow")
   for (const name of ["bash", "write", "edit", "apply_patch", "execute"])
     expect(Permission.evaluate(name, "*", rules).effect).toBe("deny")
