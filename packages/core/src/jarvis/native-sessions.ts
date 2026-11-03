@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { Session } from "../session.js"
 import { Agent } from "../agent.js"
 import { SessionSchema } from "../session/schema.js"
@@ -13,7 +13,14 @@ import * as JarvisAgent from "./agent.js"
  * ordinary developer tools. It is a foundation for the brain's future tool
  * registry, not yet the autonomous model-driven tool-calling loop.
  */
-export const BRAIN_PERMISSIONS = [{ action: "*", resource: "*", effect: "deny" }] as const
+export const BRAIN_PERMISSIONS = [...JarvisAgent.permissions]
+
+/** Durable role annotation identifies our brain without forging a Session.ID. */
+export const BrainMetadata = Schema.Struct({
+  jarvis: Schema.Struct({ role: Schema.Literal("brain") }),
+})
+export const isBrain = (session: Pick<SessionSchema.Info, "metadata">) => Schema.is(BrainMetadata)(session.metadata)
+
 
 export const makeNativeSessions = Effect.fn("Jarvis.makeNativeSessions")(function* () {
   const sessions = yield* Session.Service
@@ -22,15 +29,30 @@ export const makeNativeSessions = Effect.fn("Jarvis.makeNativeSessions")(functio
   const createBrain = Effect.fn("Jarvis.createBrain")(function* (parentID: SessionSchema.ID) {
     const selected = yield* resolveBrainModel()
     const model = ModelSchema.Ref.parse(selected.providerID + "/" + selected.modelID)
-    // Use an independently identified session, never the user's worker session.
-    const brain = yield* sessions.create({
+
+    // Existing OpenCode sessions already have canonical server-generated IDs.
+    // Search by explicit role metadata instead of constructing custom IDs.
+    const existing = yield* sessions.list({ search: "Jarvis", parentID, limit: 100 })
+    const brain = existing.data.find(isBrain)
+    if (brain) {
+      // Migrate older deny-all brain sessions without losing their history.
+      yield* sessions.setPermissions({ sessionID: brain.id, permissions: [...BRAIN_PERMISSIONS] })
+      if (brain.model?.providerID !== model.providerID || brain.model?.id !== model.id) {
+        yield* sessions.switchModel({ sessionID: brain.id, model })
+      }
+      return { sessionID: brain.id, model, fallbackUsed: selected.fallbackUsed, reused: true }
+    }
+
+    const created = yield* sessions.create({
       parentID,
       title: "Jarvis · brain",
       agent: JarvisAgent.ID,
       model,
-      permissions: [{ action: "*", resource: "*", effect: "deny" }],
+      permissions: [...BRAIN_PERMISSIONS],
+      metadata: { jarvis: { role: "brain" } },
+      // Do not specify id: Session.Service generates the canonical ID.
     })
-    return { sessionID: brain.id, model, fallbackUsed: selected.fallbackUsed }
+    return { sessionID: created.id, model, fallbackUsed: selected.fallbackUsed, reused: false }
   })
 
   const createWorker = Effect.fn("Jarvis.createWorker")(function* (input: {
@@ -48,6 +70,7 @@ export const makeNativeSessions = Effect.fn("Jarvis.makeNativeSessions")(functio
       parentID: input.parentID,
       title: input.title,
       agent: selected.id,
+      metadata: { jarvis: { role: "worker" } },
       ...(input.model ? { model: input.model } : {}),
     })
     yield* sessions.prompt({ sessionID: worker.id, text: input.instruction })

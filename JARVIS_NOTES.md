@@ -43,3 +43,11 @@ This mapping was based on the pinned repository's actual files, not the old `pac
 ## Unverified and design decisions to settle
 
 Model availability, disable-reasoning variant, concurrent native execution, dynamic agent/plugin reload behavior, precise tool registry connection, permission containment and durable task recovery all require live integration tests. Do not mark these complete based on unit tests of the standalone state machine.
+
+## Free-tier request-shape compatibility (reported 2026-11-04)
+
+The user isolated two apparent HTTP 429 failures by comparing the same free model with build/general/explore versus Jarvis: (1) a deny-all agent with zero exposed tools, and (2) a noncanonical deterministic session ID. A 429 may also indicate a genuine rate/quota limit; inspect the request shape before classifying it.
+
+This fork previously had the zero-tool Jarvis definition, which is now changed to deny-by-default plus explicit read, glob, grep and question permissions. Code-editing and shell tools stay denied in the brain. The current tree **did not contain** an existing custom deterministic Jarvis ID generator. The native adapter now retrieves tagged brain sessions via session metadata and calls Session.Service.create without an ID for new ones. The adapter's ID reuse still requires integration-level restart tests; model/gateway confirmation needs local provider credentials.
+
+See `jarvis/429_FIX_TESTING.md` for regression checks and Linux commands.
