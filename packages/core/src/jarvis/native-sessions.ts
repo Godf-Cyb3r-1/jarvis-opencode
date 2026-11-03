@@ -4,6 +4,7 @@ import { Agent } from "../agent.js"
 import { SessionSchema } from "../session/schema.js"
 import { Model as ModelSchema } from "@opencode/schema/model"
 import { resolveBrainModel } from "./model-resolver.js"
+import * as JarvisAgent from "./agent.js"
 
 /**
  * In-process Jarvis → OpenCode session adapter.
@@ -25,6 +26,7 @@ export const makeNativeSessions = Effect.fn("Jarvis.makeNativeSessions")(functio
     const brain = yield* sessions.create({
       parentID,
       title: "Jarvis · brain",
+      agent: JarvisAgent.ID,
       model,
       permissions: [{ action: "*", resource: "*", effect: "deny" }],
     })
@@ -40,7 +42,8 @@ export const makeNativeSessions = Effect.fn("Jarvis.makeNativeSessions")(functio
   }) {
     // Reject ambiguous or empty tasks before reserving a worker slot.
     if (!input.instruction.trim()) return yield* Effect.fail(new Error("Worker instruction is required"))
-    const selected = yield* agents.select(input.agent)
+    const selected = yield* agents.select(input.agent ?? Agent.defaultID)
+    if (selected.id === JarvisAgent.ID) return yield* Effect.fail(new Error("Jarvis brain cannot be used as a worker agent"))
     const worker = yield* sessions.create({
       parentID: input.parentID,
       title: input.title,
