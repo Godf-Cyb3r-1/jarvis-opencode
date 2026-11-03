@@ -1,12 +1,16 @@
-name: Pinned OpenCode Linux baseline
+name: Jarvis OpenCode Linux milestone build
 on:
   push:
     branches: [main]
     paths:
       - 'packages/core/src/jarvis/**'
+      - 'packages/core/src/agent.ts'
       - 'jarvis/**'
       - '.github/workflows/linux-baseline.yml'
   workflow_dispatch:
+concurrency:
+  group: jarvis-main-linux-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -22,7 +26,9 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Verify Jarvis controller and model resolver unit tests
         run: cd packages/core && bun test src/jarvis/
-      - name: Build original OpenCode Linux baseline
+      - name: Typecheck native OpenCode core
+        run: bun run --cwd packages/core typecheck
+      - name: Build modified OpenCode Linux executable with Jarvis
         env:
           OPENCODE_VERSION: '2.2.5'
           OPENCODE_CHANNEL: latest
@@ -35,15 +41,20 @@ jobs:
           candidate=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
           test -n "$candidate"
           mkdir -p artifact
-          cp "$candidate" artifact/opencode-pinned-linux-x64
-          chmod +x artifact/opencode-pinned-linux-x64
-          reported=$(artifact/opencode-pinned-linux-x64 --version)
+          cp "$candidate" artifact/jarvis-opencode-linux-x64
+          chmod +x artifact/jarvis-opencode-linux-x64
+          reported=$(artifact/jarvis-opencode-linux-x64 --version)
           echo "$reported"
           test "$reported" = "opencode v2.2.5"
-          (cd artifact && sha256sum opencode-pinned-linux-x64 > SHA256SUMS)
-          echo "Pinned unmodified OpenCode baseline with isolated Jarvis controller source files; Jarvis CLI and runtime integration are NOT yet implemented." > artifact/BUILD_STATUS.txt
+          (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
+          printf "Jarvis 0.1.0-dev.4 | OpenCode v2.2.5\nNative primary brain agent and persona; autonomous delegation tools NOT yet installed.\n" > artifact/BUILD_STATUS.txt
+      - name: Verify compiled native Jarvis agent registration
+        shell: bash
+        run: |
+          timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone > /tmp/agents.json
+          jq -e 'any(.id == "jarvis" and .mode == "primary")' /tmp/agents.json
       - uses: actions/upload-artifact@v4
         with:
-          name: opencode-pinned-linux-x64
+          name: jarvis-m1b-linux-x64
           path: artifact/
           if-no-files-found: error
