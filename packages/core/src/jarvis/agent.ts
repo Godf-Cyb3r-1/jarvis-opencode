@@ -16,6 +16,17 @@ export const permissions = [
   { action: "glob", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
   { action: "question", resource: "*", effect: "allow" },
+  { action: "agent_list", resource: "*", effect: "allow" },
+  { action: "model_list", resource: "*", effect: "allow" },
+  { action: "session_create", resource: "*", effect: "allow" },
+  { action: "session_status", resource: "*", effect: "allow" },
+  { action: "session_send", resource: "*", effect: "allow" },
+  { action: "session_interrupt", resource: "*", effect: "allow" },
+  { action: "session_peek", resource: "*", effect: "allow" },
+  { action: "session_switch_agent", resource: "*", effect: "allow" },
+  { action: "session_switch_model", resource: "*", effect: "allow" },
+  { action: "session_compact", resource: "*", effect: "allow" },
+  { action: "command_run", resource: "*", effect: "allow" },
 ] as const
 
 export const definition = (): Agent.Info => ({

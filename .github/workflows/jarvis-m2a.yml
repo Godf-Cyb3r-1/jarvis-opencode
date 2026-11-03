@@ -1,0 +1,53 @@
+name: Jarvis M2A native control tools
+on:
+  push:
+    branches: ['feat/jarvis-native-control-tools']
+    paths:
+      - 'packages/core/src/jarvis/**'
+      - 'packages/core/src/plugin/internal.ts'
+      - '.github/workflows/jarvis-m2a.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jarvis-m2a-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun install --frozen-lockfile
+      - name: Jarvis tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: Typecheck native OpenCode core
+        run: bun run --cwd packages/core typecheck
+      - name: Build Jarvis Linux executable
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Verify compiled agent and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$file"
+          mkdir -p artifact
+          cp "$file" artifact/jarvis-opencode-linux-x64
+          chmod +x artifact/jarvis-opencode-linux-x64
+          test "$(artifact/jarvis-opencode-linux-x64 --version)" = 'opencode v2.2.5'
+          timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone > /tmp/agents.json
+          jq -e 'any(.id == "jarvis" and .mode == "primary")' /tmp/agents.json
+          (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
+          printf 'Jarvis M2A: first four native worker-control tools. Fifth-task durable queue and complete M2 acceptance remain incomplete.\n' > artifact/BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-m2a-linux-x64
+          path: artifact/
+          if-no-files-found: error
