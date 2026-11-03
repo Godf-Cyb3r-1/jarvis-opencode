@@ -5,6 +5,7 @@ import { Array, Context, Effect, Layer, Types } from "effect"
 import { Agent } from "@opencode/schema/agent"
 import { Bus } from "./bus.js"
 import { State } from "./state.js"
+import * as JarvisAgent from "./jarvis/agent.js"
 
 export const ID = Agent.ID
 export type ID = typeof ID.Type
@@ -70,7 +71,10 @@ const layer = Layer.effect(
     }
     const state = State.create<Data, Editor>({
       name: "agent",
-      initial: () => ({ agents: new Map() }),
+      initial: () => ({
+        agents: new Map([[JarvisAgent.ID, JarvisAgent.definition() as Types.DeepMutable<Info>]]),
+        default: JarvisAgent.ID,
+      }),
       editor: (editor) => ({
         list: () => Array.fromIterable(editor.agents.values()),
         get: (id) => editor.agents.get(id),
