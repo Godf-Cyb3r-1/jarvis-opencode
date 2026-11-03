@@ -1,0 +1,49 @@
+name: Pinned OpenCode Linux baseline
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/core/src/jarvis/**'
+      - 'jarvis/**'
+      - '.github/workflows/linux-baseline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Verify controller isolation + queue unit tests
+        run: bun test packages/core/src/jarvis/controller.test.ts
+      - name: Install pinned workspace dependencies
+        run: bun install --frozen-lockfile
+      - name: Build original OpenCode Linux baseline
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Verify actual executable version
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$candidate"
+          mkdir -p artifact
+          cp "$candidate" artifact/opencode-pinned-linux-x64
+          chmod +x artifact/opencode-pinned-linux-x64
+          reported=$(artifact/opencode-pinned-linux-x64 --version)
+          echo "$reported"
+          test "$reported" = "opencode v2.2.5"
+          (cd artifact && sha256sum opencode-pinned-linux-x64 > SHA256SUMS)
+          echo "Pinned unmodified OpenCode baseline with isolated Jarvis controller source files; Jarvis CLI and runtime integration are NOT yet implemented." > artifact/BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-pinned-linux-x64
+          path: artifact/
+          if-no-files-found: error

@@ -1,0 +1,19 @@
+name: Jarvis controller foundation tests
+on:
+  push:
+    branches: [jarvis/controller-foundation]
+    paths:
+      - 'packages/core/src/jarvis/**'
+      - '.github/workflows/jarvis-foundation-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun test packages/core/src/jarvis/controller.test.ts
