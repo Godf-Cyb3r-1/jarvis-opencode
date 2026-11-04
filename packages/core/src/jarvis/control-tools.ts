@@ -54,7 +54,7 @@ export const Plugin = {
             ...(owned.metadata ?? {}),
             jarvis: { role: "worker", queue: { status: "running", instruction: task.input.instruction } },
           }
-          await Effect.runPromise(sessions.setMetadata(task.input.sessionID, { metadata }))
+          await Effect.runPromise(sessions.setMetadata({ sessionID: task.input.sessionID, metadata }))
           await Effect.runPromise(sessions.prompt({ sessionID: task.input.sessionID, text: task.input.instruction }))
           await Effect.runPromise(sessions.wait(task.input.sessionID))
           const finished = await Effect.runPromise(sessions.get(task.input.sessionID))
@@ -390,7 +390,8 @@ export const Plugin = {
             recoverableQueuedInstruction(current) !== undefined
           const cancelled = scheduler.cancel(input.sessionID)
           if (wasQueued) {
-            yield* sessions.setMetadata(input.sessionID, {
+            yield* sessions.setMetadata({
+              sessionID: input.sessionID,
               metadata: {
                 ...(current.metadata ?? {}),
                 jarvis: { role: "worker", queue: { status: "cancelled" } },
