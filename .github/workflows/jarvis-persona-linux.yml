@@ -7,6 +7,8 @@ on:
       - 'packages/**'
       - 'jarvis/**'
       - '.github/workflows/jarvis-persona-linux.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
