@@ -91,6 +91,7 @@ export const Plugin = {
     // requiring Jarvis to issue a control tool after a process restart.
     // This deliberately does not replay any worker with an execution record.
     const existingParents = yield* sessions.list({ limit: 100, archived: false })
+      .pipe(Effect.orElseSucceed(() => ({ data: [] as SessionSchema.Info[] })))
     for (const parent of existingParents.data) {
       if (parent.agent !== JarvisAgent.ID) continue
       yield* restoreQueue(parent.id)
