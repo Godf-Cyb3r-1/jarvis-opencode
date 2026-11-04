@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/jarvis-persona-pipeline-20261104
+      - feature/jarvis-m3-m8-integrated
       - feature/jarvis-m3-durable-worker-queue
     paths:
       - 'packages/**'
