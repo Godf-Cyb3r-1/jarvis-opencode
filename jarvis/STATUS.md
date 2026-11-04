@@ -24,6 +24,7 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 - [x] Implement Model.Service-based model resolution and explicit fallback selection (unit tested)
 - [ ] Verify live model availability, thinking disabled, fallback and latency
 - [x] Give native Jarvis agent read-only inspection permissions (read/glob/grep/question) while keeping mutation tools denied, verified with policy tests
+- [x] Retain OpenCode's built-in `core/date` and `core/environment` prompt sources in the canonical Jarvis system; live A/B confirms persona-only requests get a misleading free-gateway 429 while persona plus `<env>` succeeds
 - [x] Register model-callable native delegation/discovery/control tools and verify compiled source, permissions and ownership tests (M2; PR #5)
 - [x] User-exported Linux session confirms live Jarvis-to-worker delegation and working worker follow-ups (4 Nov 2026)
 - [ ] Verify the corrected status/list/queue behavior with the updated M2B executable

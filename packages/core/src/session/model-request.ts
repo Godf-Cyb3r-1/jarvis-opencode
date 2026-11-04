@@ -327,7 +327,10 @@ export const layer = Layer.effect(
           if (!["read", "glob", "grep", "question"].includes(name)) hooked.delete(name)
         }
       }
-      const system = canonicalSystem(input.agent, shaped.system)
+      // Use the pre-hook system parts as the source of OpenCode's built-in
+      // date/environment context: hooks may replace the whole system array,
+      // but the free gateway still needs the environment block.
+      const system = canonicalSystem(input.agent, shaped.system, input.system)
       if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
         const canonicalID = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(String(session.id))
         yield* Effect.logInfo("jarvis.gateway.request_shape", {

@@ -8,6 +8,21 @@ This correction follows two user-observed request-shape problems that the free p
 2. In the current source there was **no** `packages/core/src/jarvis/brain.ts` or custom `ses_jarvis_*` generator. The existing `Session.Service.create` already generated canonical IDs. The native brain adapter now tags sessions with `metadata.jarvis.role = "brain"`, finds an existing session by title/role/parent, and reuses that canonical session across restarts. Otherwise it creates one without passing an ID.
 3. Existing brain sessions reused by the adapter have their session-level permissions migrated to the new inspection allowlist. Newly created workers are explicitly tagged `role: "worker"`, preventing role inheritance from making them look like brain sessions.
 
+## 2026-11-04 follow-up: the missing built-in environment block
+
+A live request capture showed the remaining Jarvis-specific 429 is caused by the final system prompt, not the agent, model, tools, headers, or account quota:
+
+- the normal `build` prompt succeeds;
+- the persona-only Jarvis prompt fails with the misleading `FreeUsageLimitError` 429;
+- adding OpenCode's built-in `<env>...</env>` block makes the same Jarvis request succeed;
+- putting the Jarvis persona on `build` reproduces the 429, and putting the build prompt on `jarvis` fixes it.
+
+The canonical prompt guard had discarded every instruction part, including the built-in `core/date` and `core/environment` sources. The fix retains only those two built-in sources alongside the persona, while still discarding project `AGENTS.md`, skills, code-mode catalog text and plugin system-message replacements. `SessionModelRequest` passes the pre-hook system parts to the guard so a context hook cannot remove the environment block.
+
+Regression coverage: `packages/core/src/jarvis/prompt-guard.test.ts` asserts that the final Jarvis prompt contains `<env>` and never contains injected project instructions.
+
+Verified live on 4 Nov 2026 with `opencode/deepseek-v4.1-flash-free`, `opencode/big-pickle` and `opencode/glm-5.3-flash-free`. Running the CLI directly from source advertises `opencode/local/local/cli`, which the free gateway also rejects; release binaries advertise `opencode/latest/<version>/cli`, so that is a development-only observation.
+
 ## CI verification
 
 The workflow `Jarvis free-tier 429 compatibility` validates:
