@@ -24,6 +24,8 @@ export const permissions = [
   { action: "memory_find", resource: "*", effect: "allow" },
   { action: "memory_forget", resource: "*", effect: "allow" },
   { action: "worker_events", resource: "*", effect: "allow" },
+  { action: "agent_pick", resource: "*", effect: "allow" },
+  { action: "worker_audit", resource: "*", effect: "allow" },
   { action: "session_send", resource: "*", effect: "allow" },
   { action: "session_interrupt", resource: "*", effect: "allow" },
   { action: "session_peek", resource: "*", effect: "allow" },
