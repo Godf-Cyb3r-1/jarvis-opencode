@@ -43,7 +43,7 @@ function cleanSpeech(source: string): string {
     .replace(/&/g, " and ")
     .replace(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/g, (_m, a: string, b: string) => spokenNumber(a) + " to " + spokenNumber(b))
     .replace(/\b\d{1,2}\b/g, (n) => spokenNumber(n))
-    .replace(/\s{2,}/g, " ")
+    .replace(/\s*\n+\s*/g, ". ")\n    .replace(/\s{2,}/g, " ")
     .replace(/\s+([,.!?])/g, "$1")
     .trim()
 }
