@@ -1,0 +1,53 @@
+name: Jarvis M2H prompt precedence and timestamp regression
+on:
+  push:
+    branches: ['fix/jarvis-prompt-precedence-timestamps']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jarvis-m2h-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun install --frozen-lockfile
+      - name: Jarvis prompt and response regression tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: TUI side conversation and expression tests
+        run: cd packages/tui && bun test src/feature-plugins/prompt/jarvis-expression.test.ts src/feature-plugins/prompt/jarvis-side-history.test.ts
+      - name: Typecheck OpenCode and TUI
+        run: |
+          bun run --cwd packages/core typecheck
+          bun run --cwd packages/tui typecheck
+      - name: Build versioned Linux executable
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Prove embedded persona and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$binary"
+          mkdir -p artifact
+          cp "$binary" artifact/jarvis-opencode-linux-x64
+          chmod +x artifact/jarvis-opencode-linux-x64
+          test "$(artifact/jarvis-opencode-linux-x64 --version)" = 'opencode v2.2.5'
+          timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone > /tmp/jarvis-agents.json
+          jq -e 'any(.id == "jarvis" and .mode == "primary" and ((.system // "") | contains("JARVIS_PERSONA_VERSION_M2H")))' /tmp/jarvis-agents.json
+          (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
+          printf 'Jarvis 0.2.0-dev.8 M2H; pinned persona marker, stripped clock prefixes, prompt-hook precedence fix, no sound output.\n' > artifact/BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-m2h-linux-x64
+          path: artifact/
+          if-no-files-found: error
