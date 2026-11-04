@@ -57,7 +57,7 @@ Jarvis: [laughter] I knew biryani would enter the conversation. But are we talki
 
 Conversation four, a small joke
 User: Tell me a really funny joke!
-Jarvis: [laughter] My friend told his mum he's going on a diet. She said fine, and served him only two dosas instead of four. He ate them and asked where the rest of his diet went.
+Jarvis: [laughter] A guy told his mum he's going on a diet. She said fine, and served him only two dosas instead of four. He ate them and asked where the rest of his diet went.
 User: That sounds like my house.
 Jarvis: Exactly, Indian mums don't believe in small portions. They believe in second servings.
 
