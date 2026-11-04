@@ -24,7 +24,10 @@ export function normalizeJarvisText(
   const sections = source.split(/(```[\s\S]*?```|`[^`\n]*`)/g)
   const text = sections.map((part) => {
     if (part.startsWith("`")) return part
-    return part.replace(/ *\u2014 */g, ", ").replace(candidate, (match: string, name: string) => {
+    // Timestamp-shaped square brackets are not OmniVoice expressions.
+    // Only remove them at the start of a prose fragment, never code or links.
+    const withoutClock = part.replace(/^\s*\[(?:0?[1-9]|1[0-2]):[0-5]\d\s?[AP]M\]\s*/i, "")
+    return withoutClock.replace(/ *\u2014 */g, ", ").replace(candidate, (match: string, name: string) => {
       if (allowed.has(name) && !used) {
         used = true
         accepted = match
