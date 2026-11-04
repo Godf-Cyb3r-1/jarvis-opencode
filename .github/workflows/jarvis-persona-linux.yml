@@ -9,7 +9,7 @@ on:
       - '.github/workflows/jarvis-persona-linux.yml'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: jarvis-persona-linux-${{ github.ref }}
   cancel-in-progress: true
@@ -58,15 +58,3 @@ jobs:
           name: jarvis-persona-linux-x64
           path: artifact/
           if-no-files-found: error
-      - name: Publish downloadable Linux binary as prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag=jarvis-persona-fix-20261104
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" artifact/jarvis-opencode-linux-x64 artifact/SHA256SUMS artifact/COMMIT_SHA artifact/BUILD_STATUS.txt --clobber
-          else
-            gh release create "$tag" artifact/jarvis-opencode-linux-x64 artifact/SHA256SUMS artifact/COMMIT_SHA artifact/BUILD_STATUS.txt --target "${GITHUB_SHA}" --title 'Jarvis persona fix Linux x64' --notes 'Standalone Linux build from the dedicated Jarvis persona fix branch. Separate from main and Android projects.' --prerelease
-          fi
