@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.2.0-dev.2** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.2.0-dev.3** (controller foundation, NOT a usable Jarvis assistant)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -47,16 +47,20 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 - [ ] Memory recall tests with <100 ms target
 
 ### 4 — Persona and active assistant
+- [x] M2C: update versioned natural conversational persona; independent /talk TUI side conversation with bounded multi-turn history
 - [ ] Proactive worker events, meaningful single notifications
 - [ ] User preference recall and natural conversation tests
-- [ ] 13 OmniVoice text marker validation (NO audio)
+- [x] Validate 13 text-only OmniVoice markers on /talk responses; test unsupported/repeated tags
+- [ ] Extend the validator to all ordinary Jarvis replies (currently persona-guided)
+- [ ] Test expression quality and natural conversation on Linux
 
 ### 5 — Dynamic tools and safety
 - [ ] Agent selection/creation, plugin creation
 - [ ] Two-stage code-enforced confirmation and durable audit log
 
 ### 6 — Hardening and CLI delivery
-- [ ] Existing OpenCode TUI and headless command entry points
+- [x] Preserve existing OpenCode TUI and headless command entry points, plus /talk side command
+- [ ] Full parallel durable chat lane and non-modal back-and-forth while main session generates
 - [ ] Restart recovery, permissions, fallback and integrated tests
 - [ ] Release an integrated Linux Jarvis binary
 
@@ -79,3 +83,5 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 - `0.2.0-dev.1`: Native Jarvis controller tools and in-memory 4-worker scheduler, fifth queued. [PR #5](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/5), merged at `44949aab173bd2f2c8d560d69827144a6c4d98a7`; [CI 41704040467](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41704040467) PASS for source commit `edaf5688`. Live model-backed delegation and restart recovery remain acceptance items. See `jarvis/MILESTONE_2A.md`.
 
 - `0.2.0-dev.2`: Export-driven M2B reliability fixes: native status null/outcome normalization, accurate failed execution result, single-call session inventory, real worker timestamps, and a short non-LLM activity preview. Persona corrects the fifth queue and deliverable-verification claims. See `jarvis/MILESTONE_2B.md`. Live acceptance is pending.
+
+- `0.2.0-dev.3`: M2C human conversation persona, native TUI /talk independent side-generation, bounded six-turn history, 13 OmniVoice textual marker validator for /talk. [PR #7](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/7), merge `a931d9d7efb612ec7ccfb5f04b7fe309c4a08031`. [CI 41764237169](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41764237169) PASS (core/TUI tests & typechecks, Linux build). No voice generation, proactive notifications, durable profile or simultaneous ordinary main-session turns yet. Linux acceptance guide: `jarvis/MILESTONE_2C.md`.
