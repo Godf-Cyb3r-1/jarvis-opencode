@@ -1,0 +1,53 @@
+name: Jarvis M2F persona calibration and global expression policy
+on:
+  push:
+    branches: ['feat/jarvis-persona-calibration-omni-enforcement']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jarvis-m2f-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun install --frozen-lockfile
+      - name: Core Jarvis and expression policy tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: TUI expression and side history tests
+        run: cd packages/tui && bun test src/feature-plugins/prompt/jarvis-expression.test.ts src/feature-plugins/prompt/jarvis-side-history.test.ts
+      - name: Typecheck OpenCode core and TUI
+        run: |
+          bun run --cwd packages/core typecheck
+          bun run --cwd packages/tui typecheck
+      - name: Build Linux executable
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Verify and package Linux release
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$binary"
+          mkdir -p artifact
+          cp "$binary" artifact/jarvis-opencode-linux-x64
+          chmod +x artifact/jarvis-opencode-linux-x64
+          test "$(artifact/jarvis-opencode-linux-x64 --version)" = 'opencode v2.2.5'
+          timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone > /tmp/agents.json
+          jq -e 'any(.id == "jarvis" and .mode == "primary")' /tmp/agents.json
+          (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
+          printf 'Jarvis 0.2.0-dev.6: emotionally expressive Indian-English companion persona; at most one OmniVoice expression per completed Jarvis text response. No speech synthesis.\n' > artifact/BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-m2f-linux-x64
+          path: artifact/
+          if-no-files-found: error
