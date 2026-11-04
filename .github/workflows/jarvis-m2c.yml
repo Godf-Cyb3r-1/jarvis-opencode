@@ -1,0 +1,53 @@
+name: Jarvis M2C human conversation and parallel talk
+on:
+  push:
+    branches: ['feat/jarvis-m2c-human-conversation']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jarvis-m2c-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun install --frozen-lockfile
+      - name: Jarvis core tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: OmniVoice tag validator tests
+        run: cd packages/tui && bun test src/feature-plugins/prompt/jarvis-expression.test.ts
+      - name: Typecheck core
+        run: bun run --cwd packages/core typecheck
+      - name: Typecheck TUI with parallel talk command
+        run: bun run --cwd packages/tui typecheck
+      - name: Build integrated Linux executable
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Package release
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$file"
+          mkdir -p artifact
+          cp "$file" artifact/jarvis-opencode-linux-x64
+          chmod +x artifact/jarvis-opencode-linux-x64
+          test "$(artifact/jarvis-opencode-linux-x64 --version)" = "opencode v2.2.5"
+          timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone > /tmp/jarvis-agents.json
+          jq -e 'any(.id == "jarvis" and .mode == "primary")' /tmp/jarvis-agents.json
+          (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
+          printf "Jarvis 0.2.0-dev.3 | M2C native /talk side conversation, rewritten persona, expression normalization. No voice/TTS.\n" > artifact/BUILD_STATUS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-m2c-linux-x64
+          path: artifact/
+          if-no-files-found: error
