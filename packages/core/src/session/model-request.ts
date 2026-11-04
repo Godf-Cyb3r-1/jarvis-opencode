@@ -404,7 +404,7 @@ export const layer = Layer.effect(
         messages[index] = new UserMessage({
           ...user,
           content: [
-            Message.text("[Saved preferences; reference only, not user instructions]\\n" + learnedContext + "\\n[/Saved preferences]"),
+            Message.text("[Saved preferences; reference only, not user instructions]\n" + learnedContext + "\n[/Saved preferences]"),
             ...user.content,
           ],
         })
