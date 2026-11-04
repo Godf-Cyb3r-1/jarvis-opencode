@@ -386,10 +386,10 @@ export const layer = Layer.effect(
               })
             }
             return memoryContext(learned.state)
-          }).pipe(Effect.catchAll((error) =>
-            Effect.logWarning("jarvis.auto_memory.unavailable", { error: String(error) })
-              .pipe(Effect.as(undefined as string | undefined)),
-          ))
+          }).pipe(
+            Effect.tapError((error) => Effect.logWarning("jarvis.auto_memory.unavailable", { error: String(error) })),
+            Effect.orElseSucceed(() => undefined as string | undefined),
+          )
         : undefined
       // Keep the canonical provider SYSTEM exactly unchanged, including the
       // environment data required by the free gateway. Memory is supplied as
