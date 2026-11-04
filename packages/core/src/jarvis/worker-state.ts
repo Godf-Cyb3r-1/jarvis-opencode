@@ -27,5 +27,5 @@ export function derive(input: {
     outcome === "succeeded" ? "completed" :
     // An idle worker has not necessarily performed meaningful work.
     "idle"
-  return { status, ...(outcome !== undefined ? { outcome } : {}) }
+  return { status, ...(!input.active && status !== "queued" && outcome !== undefined ? { outcome } : {}) }
 }
