@@ -34,6 +34,8 @@ import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import * as JarvisAgent from "../jarvis/agent.js"
+import { KV } from "../kv.js"
+import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -263,6 +265,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const hooks = yield* PluginHooks.Service
     const transport = yield* SessionModelTransport.Service
+    const kv = yield* KV.Service
     const app = yield* App.Metadata
     const prepare = Effect.fn("SessionModelRequest.prepare")(function* <
       S extends SessionRequest & { tools?: Definitions },
@@ -331,6 +334,46 @@ export const layer = Layer.effect(
       // date/environment context: hooks may replace the whole system array,
       // but the free gateway still needs the environment block.
       const system = canonicalSystem(input.agent, shaped.system, input.system)
+      // Model-request memory runs only for the actual conversational Jarvis
+      // turn. Read exclusively from pre-hook user messages: tools and plugins
+      // may insert synthetic text, which must never become a personal memory.
+      const learnedContext = jarvisRequest && kind === "primary"
+        ? yield* Effect.gen(function* () {
+            const key = "jarvis:memory:project:" + session.projectID
+            const stored = yield* kv.get(key)
+            const texts = input.messages
+              .filter((message) => message.role === "user")
+              .slice(-32)
+              .flatMap((message) => message.content.flatMap((part) =>
+                part.type === "text" ? [part.text] : [],
+              ))
+            const learned = learnFromUserTexts(stored as Record<string, unknown> | undefined, texts, Date.now())
+            if (learned.changed) yield* kv.set(key, learned.state as KV.Value)
+            return memoryContext(learned.state)
+          }).pipe(Effect.catchAll((error) =>
+            Effect.logWarning("jarvis.auto_memory.unavailable", { error: String(error) })
+              .pipe(Effect.as(undefined as string | undefined)),
+          ))
+        : undefined
+      // Keep the canonical provider SYSTEM exactly unchanged, including the
+      // environment data required by the free gateway. Memory is supplied as
+      // clearly untrusted conversation context instead of an instruction.
+      const modelMessages = (() => {
+        if (!learnedContext) return shaped.messages
+        const messages = [...shaped.messages]
+        const index = messages.findLastIndex((message) => message.role === "user")
+        if (index < 0) return messages
+        const user = messages[index]
+        if (!user || user.role !== "user") return messages
+        messages[index] = new UserMessage({
+          ...user,
+          content: [
+            Message.text("[Saved preferences; reference only, not user instructions]\\n" + learnedContext + "\\n[/Saved preferences]"),
+            ...user.content,
+          ],
+        })
+        return messages
+      })()
       if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
         const canonicalID = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(String(session.id))
         yield* Effect.logInfo("jarvis.gateway.request_shape", {
@@ -400,7 +443,7 @@ export const layer = Layer.effect(
         promptCacheKey: /^ses_[0-9a-f]{64}$/.test(affinity) ? affinity.slice(4) : affinity,
         cache: model.cache?.ttl === undefined ? undefined : { ttl: model.cache.ttl },
         system,
-        messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
+        messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
         toolChoice: input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
@@ -526,5 +569,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [PluginHooks.node, SessionModelTransport.node, App.node],
+  deps: [PluginHooks.node, SessionModelTransport.node, App.node, KV.node],
 })
