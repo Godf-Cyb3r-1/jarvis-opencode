@@ -58,6 +58,10 @@ export function learnFromUserTexts(
   let changed = false
   for (const text of texts) {
     for (const fact of extractFacts(text)) {
+      const muted = Array.isArray(next.jarvisAutoMuted)
+        ? next.jarvisAutoMuted as unknown[]
+        : []
+      if (muted.includes(fact.id)) continue
       const previous = itemsOf(next).find((item) => item.id === fact.id)
       if (previous?.text === fact.text) continue
       next = remember(next, fact.text, fact.id, at)
