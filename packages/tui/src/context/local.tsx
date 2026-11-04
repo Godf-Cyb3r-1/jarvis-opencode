@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
-import { batch, createMemo, onCleanup } from "solid-js"
+import { batch, createMemo, createResource, onCleanup } from "solid-js"
 import { useEvent } from "./event"
 import path from "path"
 import { useTuiPaths } from "./runtime"
@@ -23,6 +23,7 @@ import { useNewDesigns } from "../config"
 import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
 import { useData } from "./data"
+import { useClient } from "./client"
 import { usePermission } from "./permission"
 import { useLocation } from "./location"
 import { parse } from "../util/model"
@@ -31,6 +32,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
     const data = useData()
+    const client = useClient()
     const toast = useToast()
     const theme = useTheme()
     const newDesigns = useNewDesigns()
@@ -170,6 +172,17 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       onCleanup(repository.subscribe(applyPreferences))
 
+      // The backend and CLI choose OpenCode's configured default model.
+      // A new Jarvis TUI session must not let the old model.json recents
+      // silently override it with a previously used, rate-limited -free model.
+      const [openCodeDefaultModel] = createResource(
+        () => location.ref ?? data.location.default(),
+        async (ref) => {
+          const result = await client.api.model.default({ location: ref })
+          return result.data
+        },
+      )
+
       const configuredModel = createMemo(() => {
         const entry = data.location.config
           .list(location.ref)
@@ -195,6 +208,17 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const configured = configuredModel()
         if (configured && isModelValid(configured)) return configured
 
+        if (agent.current()?.id === "jarvis") {
+          // Inherit the exact backend default for new Jarvis sessions, as the
+          // successful `run --standalone --agent jarvis` path already does.
+          // Explicit selections and durable existing session models win above.
+          const active = openCodeDefaultModel()
+          if (active) {
+            const selected = { providerID: active.providerID, modelID: active.id }
+            if (isModelValid(selected)) return selected
+          }
+        }
+
         for (const item of preferences.recent) {
           if (isModelValid(item)) {
             return item
@@ -209,8 +233,41 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         }
       })
 
+      // Jarvis must use the same server-selected default as a successful
+      // "opencode run --agent jarvis" request. TUI model.json recents may
+      // still point to an inaccessible -free model after the core fix.
+      // The server's model.default endpoint uses Model.Service.default(),
+      // which is also used by the normal CLI model resolver.
+      const [serverDefaultModel] = createResource(
+        () => (location.ref ?? data.location.default()).directory,
+        async (directory) => {
+          const result = await client.api.model.default({ location: { directory } })
+          return result.data
+        },
+      )
+
       const newSessionModel = createMemo(() => {
         const a = agent.current()
+        const explicit = () => {
+          if (!args.model) return undefined
+          const { providerID, modelID } = parse(args.model)
+          return { providerID, modelID }
+        }
+        if (a?.id === "jarvis") {
+          // Keep a user's live explicit pick and configured preferences.
+          // For new Jarvis sessions, never override the server default
+          // with a stale recently-used model from model.json.
+          return getFirstValidModel(
+            () => selectionState.newSessionModelByLocationAgent[locationAgentKey(a.id)],
+            () => a.model && { providerID: a.model.providerID, modelID: a.model.id },
+            explicit,
+            configuredModel,
+            () => {
+              const value = serverDefaultModel()
+              return value ? { providerID: value.providerID, modelID: value.id } : undefined
+            },
+          )
+        }
         return getFirstValidModel(
           () => a && selectionState.newSessionModelByLocationAgent[locationAgentKey(a.id)],
           () => a?.model && { providerID: a.model.providerID, modelID: a.model.id },
@@ -384,7 +441,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
         },
         get ready() {
-          return preferences.ready
+          // Do not auto-submit a freshly opened Jarvis session while its
+          // server-selected default model is still loading.
+          return preferences.ready && (agent.current()?.id !== "jarvis" || !openCodeDefaultModel.loading)
         },
         get catalogReady() {
           return models() !== undefined

@@ -2,7 +2,7 @@ import { SystemPart } from "@opencode/ai/effect"
 import type { Agent } from "@opencode/schema/agent"
 import * as Jarvis from "./agent.js"
 
-export const PERSONA_VERSION = "JARVIS_PERSONA_VERSION_M2H"
+export const PERSONA_VERSION = "JARVIS_PERSONA_VERSION_UNIVERSAL_V2"
 
 /** Selects the actual provider-bound system instructions AFTER request hooks.
  * The user's life-assistant persona must not be silently displaced by coding
