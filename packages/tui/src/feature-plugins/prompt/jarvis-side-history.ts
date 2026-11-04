@@ -42,5 +42,24 @@ export class JarvisSideHistory {
     this.turns.set(sessionID, history)
   }
 
+  /** Bounded JSON-safe snapshot for TUI persistence between launches. */
+  snapshot(): Record<string, Array<{ user: string; assistant: string }>> {
+    return Object.fromEntries([...this.turns].slice(-64).map(([id, turns]) => [id, turns.slice(-this.maxTurns)]))
+  }
+
+  restore(value: unknown): void {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return
+    for (const [sessionID, turns] of Object.entries(value).slice(-64)) {
+      if (!sessionID.startsWith("ses_") || !Array.isArray(turns)) continue
+      const valid = turns.filter((x): x is { user: string; assistant: string } =>
+        x && typeof x.user === "string" && typeof x.assistant === "string",
+      ).slice(-this.maxTurns).map((x) => ({
+        user: cleanSideContext(x.user).slice(0, 1000),
+        assistant: cleanSideContext(x.assistant).slice(0, 1500),
+      }))
+      if (valid.length && !this.turns.has(sessionID)) this.turns.set(sessionID, valid)
+    }
+  }
+
   count(sessionID: string): number { return this.turns.get(sessionID)?.length ?? 0 }
 }
