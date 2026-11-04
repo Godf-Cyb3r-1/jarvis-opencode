@@ -1,4 +1,4 @@
-name: Jarvis automatic memory and integrated Linux x64 build
+name: Jarvis M9 automatic memory Linux x64
 on:
   push:
     branches:
