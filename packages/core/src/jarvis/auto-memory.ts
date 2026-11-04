@@ -14,7 +14,7 @@ const COLORS = [
 
 const reject = /\b(password|token|otp|one.time.password|secret|api.key|address|phone.number|aadhar|aadhaar|pan.number|bank.account|credit.card|medical|diagnos|religion|politic|sexual|health.condition)\b/i
 const negated = /\b(?:do(?:n't| not)|never|hate|dislike)\s+(?:really\s+)?like\b/i
-const colorInterest = /\b(?:colou?r|shade|dresses|clothes|wardrobe)\b/i
+const colorInterest = /\b(?:colou?rs?|shades?|dresses|clothes|wardrobe)\b/i
 const personal = /\b(?:i|my|mine)\b/i
 const preference = /\b(?:i\s+(?:really\s+)?(?:like|love|prefer|adore|favour)|my\s+(?:favourite|favorite)|i\s+would\s+like)\b/i
 
