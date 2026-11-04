@@ -35,6 +35,7 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import * as JarvisAgent from "../jarvis/agent.js"
 import { KV } from "../kv.js"
+import { SessionStore } from "./store.js"
 import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
@@ -266,6 +267,7 @@ export const layer = Layer.effect(
     const hooks = yield* PluginHooks.Service
     const transport = yield* SessionModelTransport.Service
     const kv = yield* KV.Service
+    const historyStore = yield* SessionStore.Service
     const app = yield* App.Metadata
     const prepare = Effect.fn("SessionModelRequest.prepare")(function* <
       S extends SessionRequest & { tools?: Definitions },
@@ -341,14 +343,38 @@ export const layer = Layer.effect(
         ? yield* Effect.gen(function* () {
             const key = "jarvis:memory:project:" + session.projectID
             const stored = yield* kv.get(key)
+            const marker = "jarvis:memory:backfill:v1:" + session.projectID
+            const alreadyBackfilled = (yield* kv.get(marker)) === true
+            // One-time bounded migration of explicitly stated preferences in
+            // older Jarvis conversations. Never scan workers or other agents.
+            const oldTexts = alreadyBackfilled
+              ? []
+              : yield* Effect.gen(function* () {
+                  const all = yield* historyStore.list({
+                    project: session.projectID, limit: 20, order: "desc",
+                  })
+                  const histories = yield* Effect.forEach(
+                    all.filter((item) => item.agent === JarvisAgent.ID).slice(0, 12).reverse(),
+                    (item) => historyStore.messages({
+                      sessionID: item.id, type: "user", limit: 40, order: "asc",
+                    }).pipe(Effect.orElseSucceed(() => [])),
+                  )
+                  return histories.flatMap((entries) =>
+                    entries.flatMap((message) => message.type === "user" ? [message.text] : []),
+                  )
+                })
             const texts = input.messages
               .filter((message) => message.role === "user")
               .slice(-32)
               .flatMap((message) => message.content.flatMap((part) =>
                 part.type === "text" ? [part.text] : [],
               ))
-            const learned = learnFromUserTexts(stored as Record<string, unknown> | undefined, texts, Date.now())
+            const learned = learnFromUserTexts(
+              stored as Record<string, unknown> | undefined,
+              [...oldTexts, ...texts], Date.now(),
+            )
             if (learned.changed) yield* kv.set(key, learned.state as KV.Value)
+            if (!alreadyBackfilled) yield* kv.set(marker, true)
             return memoryContext(learned.state)
           }).pipe(Effect.catchAll((error) =>
             Effect.logWarning("jarvis.auto_memory.unavailable", { error: String(error) })
@@ -569,5 +595,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [PluginHooks.node, SessionModelTransport.node, App.node, KV.node],
+  deps: [PluginHooks.node, SessionModelTransport.node, App.node, KV.node, SessionStore.node],
 })
