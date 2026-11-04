@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
-import { batch, createMemo, onCleanup } from "solid-js"
+import { batch, createMemo, createResource, onCleanup } from "solid-js"
 import { useEvent } from "./event"
 import path from "path"
 import { useTuiPaths } from "./runtime"
@@ -25,6 +25,7 @@ import { useRoute } from "./route"
 import { useData } from "./data"
 import { usePermission } from "./permission"
 import { useLocation } from "./location"
+import { useClient } from "./client"
 import { parse } from "../util/model"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
@@ -40,6 +41,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const event = useEvent()
     const permission = usePermission()
     const location = useLocation()
+    const client = useClient()
 
     const models = () => data.location.model.list(location.ref)
     const providers = () => data.location.provider.list(location.ref)
@@ -181,6 +183,21 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           : { providerID: configured.providerID, modelID: configured.model, variant: configured.variant }
       })
 
+      // A CLI run without -m leaves the model unset and resolves it server-side.
+      // Obtain that same default for a fresh TUI session instead of preferring
+      // the first catalog entry (often an exhausted free-tier model).
+      const [serverDefault] = createResource(
+        () => location.ref?.directory ?? data.location.default().directory,
+        async (directory) => {
+          try {
+            const result = await client.api.model.default({ location: { directory } })
+            return result.data ?? null
+          } catch {
+            return null
+          }
+        },
+      )
+
       const fallbackModel = createMemo(() => {
         if (args.model) {
           const { providerID, modelID } = parse(args.model)
@@ -194,6 +211,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
         const configured = configuredModel()
         if (configured && isModelValid(configured)) return configured
+
+        // Explicit configuration always wins; otherwise prefer server default.
+        const resolved = serverDefault()
+        if (resolved && isModelValid({ providerID: resolved.providerID, modelID: resolved.id }))
+          return { providerID: resolved.providerID, modelID: resolved.id }
+        // Do not prematurely select a cached free model while the default loads.
+        if (agent.current()?.id === "jarvis" && serverDefault.loading) return undefined
 
         for (const item of preferences.recent) {
           if (isModelValid(item)) {
