@@ -11,6 +11,8 @@ import { usePlugin } from "../../plugin/context"
 import { DIALOG_INSET, DialogBleed, DialogFooter, DialogHeader, DialogLayout } from "../../ui/dialog"
 import { useToast } from "../../ui/toast"
 import { getScrollAcceleration } from "../../util/scroll"
+import { normalizeExpressionTags } from "./jarvis-expression"
+import { JarvisSideHistory } from "./jarvis-side-history"
 
 // session.generate exposes the session's tools but runs no tool loop, so a
 // tool call would surface as an empty answer.
@@ -24,6 +26,7 @@ export default Plugin.define({
   id: "opencode.btw",
   setup(context) {
     const [pending, setPending] = createSignal(0)
+    const sideHistory = new JarvisSideHistory(6)
 
     context.ui.slot({
       append: "prompt.footer.status",
@@ -70,6 +73,50 @@ export default Plugin.define({
                   .then((result) => {
                     context.ui.dialog.show(() => (
                       <Answer question={question} answer={result.text.trim()} markdown={plugins.markdown} />
+                    ))
+                    context.ui.dialog.set({ size: "large", centered: true })
+                  })
+                  .catch((cause: unknown) => toast.error(cause))
+                  .finally(() => setPending((count) => count - 1))
+              },
+            },
+            {
+              id: "jarvis.side-talk",
+              title: "Talk to Jarvis while work continues",
+              description: "Independent quick conversational reply; no new work, no interruption and no change to worker history",
+              group: "Session",
+              palette: true,
+              slash: { name: "talk", arguments: true },
+              async run(input) {
+                const route = context.ui.router.current()
+                if (route.type !== "session") {
+                  toast.show({ message: "Open a Jarvis session first", variant: "warning" })
+                  return
+                }
+                const question =
+                  input?.trim() || (await context.ui.dialog.prompt({ title: "Talk to Jarvis", placeholder: "What's on your mind?" }))
+                if (!question) return
+                setPending((count) => count + 1)
+                const talkInstructions = [
+                  "You are Jarvis in a parallel, one-shot personal-conversation lane.",
+                  "Keep a warm, perceptive, distinctive and occasionally witty personality.",
+                  "Speak naturally, not like a question-and-answer bot. Do not automatically end with a question.",
+                  "The user may be chatting while a different worker or session turn runs.",
+                  "This is a short conversation, NOT a task execution request. Do not call tools, promise action, or claim to monitor workers.",
+                  "Answer the user directly in one to three sentences unless a longer response is explicitly requested.",
+                  "When genuinely fitting, at most one supported OmniVoice text tag may appear: [laughter], [sigh], [confirmation-en], [question-en], [question-ah], [question-oh], [question-ei], [question-yi], [surprise-ah], [surprise-oh], [surprise-wa], [surprise-yo], [dissatisfaction-hnn].",
+                  "Do not manufacture an emotion or put an expression into technical/error replies.",
+                ].join(" ")
+                await context.client.session
+                  .generate({ sessionID: route.sessionID, prompt: sideHistory.prompt(route.sessionID, talkInstructions, question) })
+                  .then((result) => {
+                    const reply = normalizeExpressionTags(result.text.trim())
+                    sideHistory.remember(route.sessionID, question, reply.text)
+                    if (reply.rejected.length) {
+                      console.warn("[jarvis] Unsupported or repeated expression markers suppressed", reply.rejected)
+                    }
+                    context.ui.dialog.show(() => (
+                      <Answer question={question} answer={reply.text || "I couldn't get a useful reply that time."} markdown={plugins.markdown} />
                     ))
                     context.ui.dialog.set({ size: "large", centered: true })
                   })
