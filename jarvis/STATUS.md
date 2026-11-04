@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.2.0-dev.6** (native Jarvis assistant, conversational quality under live evaluation)
+Project version: **0.2.0-dev.7** (native Jarvis assistant, conversational quality under live evaluation)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -92,3 +92,5 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 
 
 - `0.2.0-dev.6`: M2F personal companion calibration: Indian-English emotional cadence, all 13 OmniVoice expression meanings, 6 user scenarios, strict final-response expression allowlist in native LLM event publisher (duplicate and unsupported markers logged/removed), and parallel /talk alignment. [PR #10](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/10), merged at `0268d4252b0e52ee8a6d6640ff6235238a3c97a6`. [CI 41770369846](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41770369846) SUCCESS (core/TUI tests and typechecks, compiled Linux binary and artifact). The model's naturalness, actual voice, and live provider behavior remain separate acceptance checks. Final text is normalized; streaming deltas may briefly contain unnormalized markers. Test instructions: `jarvis/MILESTONE_2F.md`.
+
+- `0.2.0-dev.7`: M2G anti-bot conversational calibration: front-placed optional OmniVoice tone marker, reaction-first Indian spoken English, no corporate clichés or stock dad-jokes in persona guidance. Normal Jarvis and /talk final-text normalization replaces conversational em-dash punctuation while preserving code spans; existing strict 13-tag policy remains. [PR #11](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/11), merge `8855cc9e8cedb23b6beaca540d4580484e4207a4`. [CI 41774600100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41774600100) passed tests, typechecks, build and artifact. Live conversational quality remains unverified. No voice synthesizer or deterministic cliché replacement yet. See `jarvis/MILESTONE_2G.md`.
