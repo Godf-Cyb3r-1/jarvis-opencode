@@ -40,3 +40,19 @@ test("preserves code, Markdown links and plain replies", () => {
 test("conversational punctuation is normalized", () => {
   expect(normalizeJarvisText("Hello "+String.fromCharCode(8212)+" friend").text).toBe("Hello, friend")
 })
+
+test("clock brackets are not OmniVoice cues or legitimate assistant prefixes", () => {
+  const first = normalizeJarvisText("[5:51 PM] Arre, what happened?")
+  const second = normalizeJarvisText("[5:57 PM] [sigh] Aiyo, that's irritating.")
+  expect(first.text).toBe("Arre, what happened?")
+  expect(first.removed).toEqual(["[5:51 PM]"])
+  expect(second.text).toBe("[sigh] Aiyo, that's irritating.")
+  expect(second.removed).toEqual(["[5:57 PM]"])
+  expect(normalizeJarvisText("Use `[5:51 PM]` in an example.").text).toBe("Use `[5:51 PM]` in an example.")
+})
+test("forbidden corporate voice is rewritten while code is untouched", () => {
+  const result = normalizeJarvisText("Doing well, sharp and ready to help. What's on your plate?")
+  expect(result.text.toLowerCase()).not.toContain("sharp and ready")
+  expect(result.text.toLowerCase()).not.toContain("on your plate")
+  expect(normalizeJarvisText("`sorry to hear that`").text).toBe("`sorry to hear that`")
+})

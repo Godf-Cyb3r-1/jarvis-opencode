@@ -24,7 +24,20 @@ export function normalizeJarvisText(
   const sections = source.split(/(```[\s\S]*?```|`[^`\n]*`)/g)
   const text = sections.map((part) => {
     if (part.startsWith("`")) return part
-    return part.replace(/ *\u2014 */g, ", ").replace(candidate, (match: string, name: string) => {
+    // Timestamp-shaped square brackets are not OmniVoice expressions.
+    // Only remove them at the start of a prose fragment, never code or links.
+    const timePrefix = part.match(/^\s*\[(?:0?[1-9]|1[0-2]):[0-5]\d\s?[AP]M\]\s*/i)
+    if (timePrefix) removed.push(timePrefix[0].trim())
+    const withoutClock = part.replace(/^\s*\[(?:0?[1-9]|1[0-2]):[0-5]\d\s?[AP]M\]\s*/i, "")
+    const spoken = withoutClock.replace(/ *\u2014 */g, ", ")
+      .replace(/sharp and ready(?: to help)?/gi, "doing good")
+      .replace(/what(?:'|’)s on your plate/gi, "what's going on")
+      .replace(/take something off your plate/gi, "help with something")
+      .replace(/sorry to hear that/gi, "Arre, that sounds upsetting")
+      .replace(/how can i assist you today\??/gi, "Tell me what's happening")
+      .replace(/systems are quiet/gi, "things are calm")
+      .replace(/chips away at you/gi, "gets tiring")
+    return spoken.replace(candidate, (match: string, name: string) => {
       if (allowed.has(name) && !used) {
         used = true
         accepted = match

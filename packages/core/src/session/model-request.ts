@@ -33,6 +33,8 @@ import { Cause, Context, Effect, Layer, Result, Stream } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
+import * as JarvisAgent from "../jarvis/agent.js"
+import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
 import { PluginHooks } from "../plugin/hooks.js"
@@ -307,7 +309,32 @@ export const layer = Layer.effect(
           return t ? [[name, { ...t, description: d.description, inputSchema: d.input }] as const] : []
         }),
       )
-      const entries = Object.entries(shaped.options)
+      // Final request-shape guard: plugins and location instructions must not
+      // silently supersede the embedded personal-assistant persona. The
+      // selection above is still used for tools and worker configuration.
+      const jarvisRequest = input.agent === JarvisAgent.ID
+      const system = canonicalSystem(input.agent, shaped.system)
+      if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+        yield* Effect.logInfo("jarvis.prompt.guard", {
+          sessionID: session.id,
+          agent: String(input.agent),
+          personaVersion: PERSONA_VERSION,
+          systemParts: system.length,
+          discardedAdditionalSystemParts: shaped.system.length - system.length,
+        })
+      }
+      // Some free gateways reject sampling parameters. Leave the default
+      // untouched unless the user explicitly opts in to this supported
+      // generation key for a live provider A/B test.
+      const temperatureEnv = jarvisRequest ? process.env.JARVIS_TEMPERATURE : undefined
+      const temperature = temperatureEnv === undefined ? undefined : Number(temperatureEnv)
+      const temperatureAllowed = temperature !== undefined &&
+        Number.isFinite(temperature) && temperature >= 0 && temperature <= 2 &&
+        GENERATION_KEYS.has("temperature")
+      const requestOptions = temperatureAllowed
+        ? { ...shaped.options, temperature }
+        : shaped.options
+      const entries = Object.entries(requestOptions)
       const generation = Object.fromEntries(entries.filter(([k]) => GENERATION_KEYS.has(k))) as GenerationOptionsFields
       const providerOptions = Object.fromEntries(entries.filter(([k]) => !GENERATION_KEYS.has(k)))
       const affinity = SessionAffinity.get(session)
@@ -327,7 +354,7 @@ export const layer = Layer.effect(
         // TODO: Persist cache lineage so nested forks reuse the root session's cache key.
         promptCacheKey: /^ses_[0-9a-f]{64}$/.test(affinity) ? affinity.slice(4) : affinity,
         cache: model.cache?.ttl === undefined ? undefined : { ttl: model.cache.ttl },
-        system: shaped.system,
+        system,
         messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
         toolChoice: input.toolChoice,

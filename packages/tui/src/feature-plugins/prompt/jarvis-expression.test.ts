@@ -26,3 +26,14 @@ test("preserves code spans and markdown links", () => {
 test("keeps ordinary technical responses untagged", () => {
   expect(normalizeExpressionTags("The worker is still running.").accepted).toBeUndefined()
 })
+
+test("parallel talk removes generated bracketed clock prefixes", () => {
+  const response = normalizeExpressionTags("[5:51 PM] [sigh] Arre, tell me.")
+  expect(response.text).toBe("[sigh] Arre, tell me.")
+  expect(response.rejected).toContain("[5:51 PM]")
+})
+test("parallel talk eliminates banned corporate fragments", () => {
+  const response = normalizeExpressionTags("Sharp and ready to help, what's on your plate?")
+  expect(response.text.toLowerCase()).not.toContain("sharp and ready")
+  expect(response.text.toLowerCase()).not.toContain("on your plate")
+})
