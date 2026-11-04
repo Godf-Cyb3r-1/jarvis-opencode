@@ -10,6 +10,7 @@ import { Session } from "../session.js"
 import { SessionSchema } from "../session/schema.js"
 import * as JarvisAgent from "./agent.js"
 import { JarvisScheduler } from "./controller.js"
+import { derive } from "./worker-state.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -35,6 +36,9 @@ export const Plugin = {
         try {
           await Effect.runPromise(sessions.prompt({ sessionID: task.input.sessionID, text: task.input.instruction }))
           await Effect.runPromise(sessions.wait(task.input.sessionID))
+          const finished = await Effect.runPromise(sessions.get(task.input.sessionID))
+          if (finished.outcome !== "succeeded")
+            throw new Error("Worker execution " + (finished.outcome ?? "ended without a terminal outcome") + ": " + task.input.sessionID)
         } finally {
           signal.removeEventListener("abort", abort)
         }
@@ -95,7 +99,7 @@ export const Plugin = {
       editor.add({
         name: "session_create",
         options: { codemode: false },
-        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Use agent_list to choose an appropriate agent first. Returns an actual worker session ID; if four workers are running, report the limit without claiming a fifth started.",
+        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Use agent_list to choose an appropriate agent first. Returns an actual worker session ID and the actual running/queued state. At most four run simultaneously; a fifth session is queued automatically and does not count as started.",
         input: Schema.Struct({
           title: Schema.String,
           instruction: Schema.String,
@@ -148,7 +152,7 @@ export const Plugin = {
       editor.add({
         name: "session_status",
         options: { codemode: false },
-        description: "Inspect a delegated worker's current state and title without dumping its transcript.",
+        description: "Inspect actual live/queued/completed/failed state of an owned worker. A completed session means its execution ended, not that the deliverable was verified. Never infer task success from session status alone.",
         input: Schema.Struct({ sessionID: SessionSchema.ID }),
         output: Schema.Struct({
           sessionID: SessionSchema.ID,
@@ -161,11 +165,11 @@ export const Plugin = {
           const info = yield* worker(context.sessionID, input.sessionID)
           const active = yield* sessions.active
           const scheduled = scheduler.get(info.id)
+          const state = derive({ scheduled: scheduled?.status, active: active.has(info.id), outcome: info.outcome })
           return {
             sessionID: info.id,
-            title: info.title,
-            status: scheduled?.status ?? (active.has(info.id) ? "running" as const : "idle" as const),
-            outcome: info.outcome,
+            ...(info.title !== undefined ? { title: info.title } : {}),
+            ...state,
           }
         }).pipe(
           Effect.map((output) => ({ output, content: "Worker " + output.sessionID + ": " + output.status })),
