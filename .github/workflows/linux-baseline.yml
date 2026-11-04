@@ -1,10 +1,13 @@
-name: Jarvis M2B Linux release
+name: Jarvis M2C Linux release
 on:
   push:
     branches: [main]
     paths:
       - 'packages/core/src/jarvis/**'
       - 'packages/core/src/agent.ts'
+      - 'packages/tui/src/feature-plugins/prompt/btw.tsx'
+      - 'packages/tui/src/feature-plugins/prompt/jarvis-expression*'
+      - 'packages/tui/src/feature-plugins/prompt/jarvis-side-history*'
       - 'packages/core/src/plugin/internal.ts'
       - 'jarvis/persona.md'
       - '.github/workflows/linux-baseline.yml'
@@ -31,6 +34,10 @@ jobs:
         run: cd packages/core && bun test src/jarvis/
       - name: Typecheck native OpenCode core
         run: bun run --cwd packages/core typecheck
+      - name: Test OmniVoice expression tags and independent conversation memory
+        run: cd packages/tui && bun test src/feature-plugins/prompt/jarvis-expression.test.ts src/feature-plugins/prompt/jarvis-side-history.test.ts
+      - name: Typecheck native TUI parallel chat
+        run: bun run --cwd packages/tui typecheck
       - name: Build modified OpenCode Linux executable with Jarvis
         env:
           OPENCODE_VERSION: '2.2.5'
@@ -50,7 +57,7 @@ jobs:
           echo "$reported"
           test "$reported" = "opencode v2.2.5"
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
-          printf "Jarvis 0.2.0-dev.2 | OpenCode v2.2.5\nNative worker status/outcome reliability, session_list and activity/timestamps; 4-slot in-memory queue. Live provider acceptance and restart recovery remain pending.\n" > artifact/BUILD_STATUS.txt
+          printf "Jarvis 0.2.0-dev.3 | OpenCode v2.2.5\nNative /talk side chat with bounded memory and text OmniVoice tag validation. Main session serializes model turns; proactive events and restart recovery remain pending.\n" > artifact/BUILD_STATUS.txt
       - name: Verify compiled native Jarvis agent registration
         shell: bash
         run: |
@@ -58,6 +65,6 @@ jobs:
           jq -e 'any(.id == "jarvis" and .mode == "primary")' /tmp/agents.json
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-m2b-main-linux-x64
+          name: jarvis-m2c-main-linux-x64
           path: artifact/
           if-no-files-found: error
