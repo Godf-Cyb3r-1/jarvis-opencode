@@ -36,3 +36,7 @@ test("preserves code, Markdown links and plain replies", () => {
   expect(normalizeJarvisText(fenced).text).toBe(fenced)
   expect(normalizeJarvisText("A normal answer with no cue.").text).toBe("A normal answer with no cue.")
 })
+
+test("conversational punctuation is normalized", () => {
+  expect(normalizeJarvisText("Hello "+String.fromCharCode(8212)+" friend").text).toBe("Hello, friend")
+})

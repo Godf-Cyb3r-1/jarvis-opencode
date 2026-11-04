@@ -24,7 +24,7 @@ export function normalizeJarvisText(
   const sections = source.split(/(```[\s\S]*?```|`[^`\n]*`)/g)
   const text = sections.map((part) => {
     if (part.startsWith("`")) return part
-    return part.replace(candidate, (match: string, name: string) => {
+    return part.replace(/ *\u2014 */g, ", ").replace(candidate, (match: string, name: string) => {
       if (allowed.has(name) && !used) {
         used = true
         accepted = match
