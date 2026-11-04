@@ -18,7 +18,7 @@ test("conversation examples cover multi-turn human connection and real limitatio
     "Conversation six, practical work stays conversational",
   ]) expect(persona).toContain(topic)
   expect(persona).toContain("Your email isn't connected here yet")
-  expect(persona).toContain("No two-option")
+  expect(persona).toContain("Never end with two alternatives")
 })
 test("OmniVoice and speech formatting boundaries are explicit", () => {
   const tags = ["laughter", "sigh", "confirmation-en", "question-oh", "question-en", "question-ah", "question-ei", "question-yi", "surprise-ah", "surprise-wa", "surprise-yo", "surprise-oh", "dissatisfaction-hnn"]
