@@ -51,7 +51,7 @@ jobs:
           chmod +x artifact/jarvis-opencode-linux-x64
           test "$(artifact/jarvis-opencode-linux-x64 --version)" = 'opencode v2.2.5'
           timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone >/tmp/jarvis-agents.json
-          jq -e 'any(.id == "jarvis" and .mode == "primary" and ((.system // "") | contains("JARVIS_PERSONA_VERSION_HUMAN_V1")))' /tmp/jarvis-agents.json
+          jq -e 'any(.id == "jarvis" and .mode == "primary" and ((.system // "") | contains("JARVIS_PERSONA_VERSION_UNIVERSAL_V2")))' /tmp/jarvis-agents.json
           echo "${GITHUB_SHA}" > artifact/COMMIT_SHA
           echo 'Linux x86_64; standalone TUI binary; no Android and no audio.' > artifact/BUILD_STATUS.txt
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
