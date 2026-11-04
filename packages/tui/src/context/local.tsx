@@ -26,6 +26,7 @@ import { useData } from "./data"
 import { useClient } from "./client"
 import { usePermission } from "./permission"
 import { useLocation } from "./location"
+import { useClient } from "./client"
 import { parse } from "../util/model"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
@@ -42,6 +43,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const event = useEvent()
     const permission = usePermission()
     const location = useLocation()
+    const client = useClient()
 
     const models = () => data.location.model.list(location.ref)
     const providers = () => data.location.provider.list(location.ref)
@@ -233,8 +235,41 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         }
       })
 
+      // Jarvis must use the same server-selected default as a successful
+      // "opencode run --agent jarvis" request. TUI model.json recents may
+      // still point to an inaccessible -free model after the core fix.
+      // The server's model.default endpoint uses Model.Service.default(),
+      // which is also used by the normal CLI model resolver.
+      const [serverDefaultModel] = createResource(
+        () => (location.ref ?? data.location.default()).directory,
+        async (directory) => {
+          const result = await client.api.model.default({ location: { directory } })
+          return result.data
+        },
+      )
+
       const newSessionModel = createMemo(() => {
         const a = agent.current()
+        const explicit = () => {
+          if (!args.model) return undefined
+          const { providerID, modelID } = parse(args.model)
+          return { providerID, modelID }
+        }
+        if (a?.id === "jarvis") {
+          // Keep a user's live explicit pick and configured preferences.
+          // For new Jarvis sessions, never override the server default
+          // with a stale recently-used model from model.json.
+          return getFirstValidModel(
+            () => selectionState.newSessionModelByLocationAgent[locationAgentKey(a.id)],
+            () => a.model && { providerID: a.model.providerID, modelID: a.model.id },
+            explicit,
+            configuredModel,
+            () => {
+              const value = serverDefaultModel()
+              return value && { providerID: value.providerID, modelID: value.id }
+            },
+          )
+        }
         return getFirstValidModel(
           () => a && selectionState.newSessionModelByLocationAgent[locationAgentKey(a.id)],
           () => a?.model && { providerID: a.model.providerID, modelID: a.model.id },
