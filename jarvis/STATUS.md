@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.2.0-dev.4** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.2.0-dev.5** (controller foundation, NOT a usable Jarvis assistant)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -87,3 +87,5 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 - `0.2.0-dev.3`: M2C human conversation persona, native TUI /talk independent side-generation, bounded six-turn history, 13 OmniVoice textual marker validator for /talk. [PR #7](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/7), merge `a931d9d7efb612ec7ccfb5f04b7fe309c4a08031`. [CI 41764237169](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41764237169) PASS (core/TUI tests & typechecks, Linux build). No voice generation, proactive notifications, durable profile or simultaneous ordinary main-session turns yet. Linux acceptance guide: `jarvis/MILESTONE_2C.md`.
 
 - `0.2.0-dev.4`: M2D text personality improvement after live greeting/frustration/humour acceptance failure. Natural Indian-English companion style without phonetic stereotypes, avoidance of fake memories and repetitive helpdesk endings; updated /talk tone guidance and tests. [PR #8](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/8), merge `000aaa96ec086ccb29ae7367b9c52d3faadc4ac8`. [CI 41766920933](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41766920933) PASS. The Linux executable still provides text only. Indian-accent speech and actual OmniVoice playback are NOT implemented; normal main-session expression tags remain model-dependent and are not guaranteed.
+
+- `0.2.0-dev.5`: M2E persona repair after live acceptance failed again. Replaced overlapping programmer-focused persona sections with a single **personal-life-first** contract. Plain Indian English, everyday conversations/jokes/relationships/planning; technology only when relevant. The /talk instructions are aligned and coding-worker isolation is preserved. [PR #9](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/9) merged at `baeaaa9598a66d422d48651837ac3bf664499c04`. [CI 41768286316](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41768286316) passed (core/TUI tests, typechecks, Linux build and agent smoke). **Live conversation quality pending; no audible Indian accent or voice engine.**
