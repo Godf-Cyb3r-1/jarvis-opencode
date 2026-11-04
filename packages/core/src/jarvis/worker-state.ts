@@ -29,3 +29,27 @@ export function derive(input: {
     "idle"
   return { status, ...(!input.active && status !== "queued" && outcome !== undefined ? { outcome } : {}) }
 }
+
+/** Cheap, non-LLM status preview from recent assistant messages only. Never send
+ * the full worker transcript to the brain and never substitute this for verification.
+ */
+export function activitySummary(messages: ReadonlyArray<{
+  readonly type: string
+  readonly content?: ReadonlyArray<{
+    readonly type: string
+    readonly text?: string
+    readonly name?: string
+    readonly state?: { readonly status: string }
+  }>
+}>): string | undefined {
+  for (const message of messages) {
+    if (message.type !== "assistant") continue
+    for (const part of [...(message.content ?? [])].reverse()) {
+      if (part.type === "text" && part.text?.trim())
+        return part.text.trim().replace(/\s+/g, " ").slice(0, 280)
+      if (part.type === "tool" && part.name)
+        return "Latest tool: " + part.name + (part.state?.status ? " (" + part.state.status + ")" : "")
+    }
+  }
+  return undefined
+}
