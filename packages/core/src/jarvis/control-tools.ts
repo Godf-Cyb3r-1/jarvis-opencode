@@ -94,7 +94,7 @@ export const Plugin = {
       .pipe(Effect.orElseSucceed(() => ({ data: [] as SessionSchema.Info[] })))
     for (const parent of existingParents.data) {
       if (parent.agent !== JarvisAgent.ID) continue
-      yield* restoreQueue(parent.id)
+      yield* restoreQueue(parent.id).pipe(Effect.orElseSucceed(() => undefined))
     }
 
     const authorize = Effect.fn("JarvisControl.authorize")(function* (sessionID: SessionSchema.ID, agent: Agent.ID) {
