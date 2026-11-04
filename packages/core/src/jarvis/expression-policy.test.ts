@@ -4,14 +4,14 @@ import { normalizeJarvisText, isConversationalText, OMNIVOICE_TAGS } from "./exp
 test("thirteen recognized OmniVoice cues are present", () => {
   expect(OMNIVOICE_TAGS.length).toBe(13)
   for (const name of OMNIVOICE_TAGS) {
-    const result = normalizeJarvisText("[" + name + "] Achha, that's nice!")
+    const result = normalizeJarvisText("[" + name + "] Seri, that's nice!")
     expect(result.accepted).toBe("[" + name + "]")
   }
 })
 
 test("allows at most one cue, only at the beginning", () => {
-  const result = normalizeJarvisText("[sigh] Arre yaar, what a day. [laughter]")
-  expect(result.text).toBe("[sigh] Arre yaar, what a day.")
+  const result = normalizeJarvisText("[sigh] Ayyo, what a day. [laughter]")
+  expect(result.text).toBe("[sigh] Ayyo, what a day.")
   expect(result.removed).toContain("[laughter]")
   expect(normalizeJarvisText("That is funny [laughter]").accepted).toBeUndefined()
   const next = normalizeJarvisText("[laughter] Nice!", { alreadyUsed: true })
@@ -36,8 +36,8 @@ test("keeps commands, code and links exact", () => {
 })
 
 test("removes unsupported cues and timestamps without destroying user data", () => {
-  const result = normalizeJarvisText("[5:51 PM] [confirmation-en] Achha. [smile]")
-  expect(result.text).toBe("[confirmation-en] Achha.")
+  const result = normalizeJarvisText("[5:51 PM] [confirmation-en] Seri. [smile]")
+  expect(result.text).toBe("[confirmation-en] Seri.")
   expect(result.removed).toEqual(["[5:51 PM]", "[smile]"])
   expect(normalizeJarvisText("The example is `[5:51 PM]`.").text).toBe("The example is `[5:51 PM]`.")
 })

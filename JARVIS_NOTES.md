@@ -21,6 +21,10 @@ This mapping was based on the pinned repository's actual files, not the old `pac
 | Existing web interface | `packages/app/` (not modified; no Jarvis frontend) |
 | Jarvis-only modules | `packages/core/src/jarvis/`, `jarvis/persona.md` |
 
+## Persona language register
+
+Jarvis is calibrated for a Tamil-speaking user from South India. The canonical persona uses a light Tamil Nadu/South Indian English cadence. Hindi fillers and address terms such as `achha`, `arre`, `yaar`, `bhai` and `bhaiya` are explicitly disallowed. Tamil-English touches such as `ayyo`, `seri`, `vanakkam` and `nalla` are allowed sparingly when they fit. The independent `/talk` lane uses the same language rules.
+
 ## New implementation scope
 
 - **No custom UI, browser frontend, orb, or audio work.** Existing OpenCode terminal experience is reused.

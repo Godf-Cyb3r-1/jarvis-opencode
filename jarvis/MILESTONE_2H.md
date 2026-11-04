@@ -12,7 +12,7 @@ Jarvis release: **0.2.0-dev.8** (OpenCode runtime **v2.2.5**). User evidence: se
 
 ## Corrections
 
-- `jarvis/persona.md` replaced overlapping historical prompt sections with a single self-identifying `JARVIS_PERSONA_VERSION_M2H` contract. It is personal-life-first with straightforward Indian English and 13 approved OmniVoice cues.
+- `jarvis/persona.md` replaced overlapping historical prompt sections with a single self-identifying `JARVIS_PERSONA_VERSION_M2H` contract. It is personal-life-first with straightforward Tamil/South Indian English and 13 approved OmniVoice cues.
 - `packages/core/src/jarvis/prompt-guard.ts` supplies a canonical, version-checked system message. `packages/core/src/session/model-request.ts` applies it **after** the plugin's prompt-shaping hook and **before** constructing the provider request for the Jarvis agent. That removes the second system-message instruction bundle from Jarvis's actual LLM request, without changing worker prompts. Lower-level HTTP hooks may still modify a raw request; those would require their own inspection.
 - Optional `JARVIS_PROMPT_DIAGNOSTICS=1` logs the agent, marker, system-message count and discarded system parts without logging private prompt text. Optional `JARVIS_TEMPERATURE=0.85` is supported if the model accepts that generation key. Do **not** set it while diagnosing the existing free-tier 429 issues; defaults are deliberately unchanged.
 - `packages/core/src/jarvis/expression-policy.ts` and the TUI `jarvis-expression.ts` now remove a leading bracketed 12-hour clock such as `[5:51 PM]` from completed Jarvis conversational text and filter the specific banned corporate phrases. These changes preserve code spans/blocks; they are not a general-purpose prose rewriting system.
