@@ -31,6 +31,41 @@ export default Plugin.define({
     const [pending, setPending] = createSignal(0)
     const sideHistory = new JarvisSideHistory(6)
 
+    // Native OpenCode execution events keep Jarvis responsive while workers
+    // run in their own sessions. Durable per-TUI dedup prevents repeat alerts.
+    const [notifications, saveNotifications] = context.storage.store("jarvis-worker-events-v1", {
+      initial: { keys: [] as string[] },
+    })
+    const notifyWorker = (kind: "completed" | "failed" | "interrupted", sessionID: string) => {
+      void (async () => {
+        await context.data.session.sync(sessionID)
+        const info = context.data.session.get(sessionID)
+        const meta = info?.metadata?.jarvis as { role?: string } | undefined
+        if (meta?.role !== "worker") return
+        const key = sessionID + ":" + kind + ":" + (info?.time?.idle ?? info?.time?.updated ?? "unknown")
+        if (notifications.keys.includes(key)) return
+        await saveNotifications((draft) => { draft.keys = [...draft.keys.slice(-199), key] })
+        const message = (info?.title || sessionID) + " " + kind
+        context.ui.toast.show({
+          title: "Jarvis worker",
+          message,
+          sessionID,
+          variant: kind === "completed" ? "success" : kind === "failed" ? "error" : "warning",
+        })
+        void context.attention.notify({
+          title: "Jarvis worker",
+          message,
+          notification: true,
+          sound: { name: kind === "completed" ? "subagent_done" : "error" },
+        })
+      })().catch((error) => console.warn("[jarvis] worker notification failed", error))
+    }
+    const events = [
+      context.data.on("session.execution.succeeded", (event) => notifyWorker("completed", event.data.sessionID)),
+      context.data.on("session.execution.failed", (event) => notifyWorker("failed", event.data.sessionID)),
+      context.data.on("session.execution.interrupted", (event) => notifyWorker("interrupted", event.data.sessionID)),
+    ]
+
     context.ui.slot({
       append: "prompt.footer.status",
       render: () => {
@@ -140,6 +175,7 @@ export default Plugin.define({
         return null
       },
     })
+    return () => { for (const dispose of events) dispose() }
   },
 })
 
