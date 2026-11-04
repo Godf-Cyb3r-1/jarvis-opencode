@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { Session } from "@opencode/schema/session"
 import { Permission } from "../permission"
 import * as JarvisAgent from "./agent"
-import { isWorkerOf, MaxActiveWorkers, Plugin } from "./control-tools"
+import { isWorkerOf, MaxActiveWorkers, Plugin, recoverableQueuedInstruction } from "./control-tools"
 
 test("Jarvis has explicit native control tools but cannot edit or run a shell", () => {
   const rules = JarvisAgent.definition().permissions
@@ -20,4 +20,19 @@ test("worker ownership must match the parent session and worker role", () => {
   expect(isWorkerOf(minimal as unknown as Session.Info, parentID)).toBe(true)
   expect(isWorkerOf(minimal as unknown as Session.Info, other)).toBe(false)
   expect(isWorkerOf({ ...minimal, metadata: { jarvis: { role: "brain" } } } as unknown as Session.Info, parentID)).toBe(false)
+})
+
+test("only unstarted persisted queued workers are recoverable", () => {
+  const queued = {
+    metadata: { jarvis: { role: "worker", queue: { status: "queued", instruction: "Build the project" } } },
+    time: {},
+    outcome: undefined,
+  } as unknown as Session.Info
+  expect(recoverableQueuedInstruction(queued)).toBe("Build the project")
+  expect(recoverableQueuedInstruction({ ...queued, time: { busy: new Date() } } as unknown as Session.Info)).toBeUndefined()
+  expect(recoverableQueuedInstruction({ ...queued, outcome: "succeeded" } as unknown as Session.Info)).toBeUndefined()
+  expect(recoverableQueuedInstruction({
+    ...queued, metadata: { jarvis: { role: "worker", queue: { status: "running", instruction: "Build the project" } } },
+  } as unknown as Session.Info)).toBeUndefined()
+  expect(recoverableQueuedInstruction({ ...queued, metadata: { jarvis: { role: "brain" } } } as unknown as Session.Info)).toBeUndefined()
 })
