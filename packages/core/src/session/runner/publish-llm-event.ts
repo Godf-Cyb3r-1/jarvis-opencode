@@ -258,6 +258,10 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         }),
       (_id, value, ordinal) =>
         Effect.gen(function* () {
+          // For Jarvis prose, publish only the normalized Ended text.
+          // Otherwise raw streamed timestamps / unwanted markers flash on screen
+          // even when the final stored message is cleaned.
+          if (name === "text" && input.agent === "jarvis") return
           yield* bus.publish(events.Delta, {
             sessionID: input.sessionID,
             assistantMessageID: yield* currentAssistantMessageID(),
