@@ -12,6 +12,7 @@ import { DIALOG_INSET, DialogBleed, DialogFooter, DialogHeader, DialogLayout } f
 import { useToast } from "../../ui/toast"
 import { getScrollAcceleration } from "../../util/scroll"
 import { normalizeExpressionTags } from "./jarvis-expression"
+import { JarvisSideHistory } from "./jarvis-side-history"
 
 // session.generate exposes the session's tools but runs no tool loop, so a
 // tool call would surface as an empty answer.
@@ -25,6 +26,7 @@ export default Plugin.define({
   id: "opencode.btw",
   setup(context) {
     const [pending, setPending] = createSignal(0)
+    const sideHistory = new JarvisSideHistory(6)
 
     context.ui.slot({
       append: "prompt.footer.status",
@@ -106,9 +108,10 @@ export default Plugin.define({
                   "Do not manufacture an emotion or put an expression into technical/error replies.",
                 ].join(" ")
                 await context.client.session
-                  .generate({ sessionID: route.sessionID, prompt: [talkInstructions, question].join("\n\n") })
+                  .generate({ sessionID: route.sessionID, prompt: sideHistory.prompt(route.sessionID, talkInstructions, question) })
                   .then((result) => {
                     const reply = normalizeExpressionTags(result.text.trim())
+                    sideHistory.remember(route.sessionID, question, reply.text)
                     if (reply.rejected.length) {
                       console.warn("[jarvis] Unsupported or repeated expression markers suppressed", reply.rejected)
                     }
