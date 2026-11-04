@@ -23,5 +23,5 @@ test("Jarvis persona remains text-only and limits optional OmniVoice expressions
   expect(persona).toContain("[laughter]")
   expect(persona).toContain("[sigh]")
   expect(persona).toContain("exactly one matching OmniVoice cue")
-  expect(persona).toContain("text-only")
+  expect(persona).toContain("The UI may display precise technical artifacts")
 })
