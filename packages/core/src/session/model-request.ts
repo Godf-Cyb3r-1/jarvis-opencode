@@ -314,6 +314,14 @@ export const layer = Layer.effect(
       // selection above is still used for tools and worker configuration.
       const jarvisRequest = input.agent === JarvisAgent.ID
       const system = canonicalSystem(input.agent, shaped.system)
+      if (!jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+        yield* Effect.logWarning("jarvis.persona.not_applied", {
+          sessionID: session.id,
+          selectedAgent: String(input.agent),
+          requestKind: kind,
+          reason: "The selected agent is not jarvis; Jarvis persona and speech sanitizer are not active.",
+        })
+      }
       if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
         yield* Effect.logInfo("jarvis.prompt.guard", {
           sessionID: session.id,
