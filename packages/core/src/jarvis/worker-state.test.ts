@@ -15,7 +15,7 @@ test("terminal outcomes reflect actual OpenCode execution, not scheduler complet
 })
 test("fifth task and follow-ups use the correct state precedence", () => {
   expect(derive({ scheduled: "queued", active: false, outcome: null })).toEqual({ status: "queued" })
-  expect(derive({ scheduled: "completed", active: true, outcome: "succeeded" })).toEqual({ status: "running", outcome: "succeeded" })
+  expect(derive({ scheduled: "completed", active: true, outcome: "succeeded" })).toEqual({ status: "running" })
   expect(derive({ scheduled: "cancelled", active: false, outcome: null })).toEqual({ status: "cancelled" })
   expect(derive({ scheduled: "failed", active: false, outcome: null })).toEqual({ status: "failed" })
 })
