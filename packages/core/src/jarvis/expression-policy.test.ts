@@ -38,5 +38,5 @@ test("preserves code, Markdown links and plain replies", () => {
 })
 
 test("conversational punctuation is normalized", () => {
-  expect(normalizeJarvisText("Hello "+String.fromCharCode(8212)+" friend").text).toBe("Hello , friend")
+  expect(normalizeJarvisText("Hello "+String.fromCharCode(8212)+" friend").text).toBe("Hello, friend")
 })
