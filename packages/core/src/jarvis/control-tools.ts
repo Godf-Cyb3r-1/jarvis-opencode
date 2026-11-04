@@ -12,6 +12,7 @@ import * as JarvisAgent from "./agent.js"
 import { JarvisScheduler } from "./controller.js"
 import { activitySummary, derive } from "./worker-state.js"
 import { findMemories, forget, remember } from "./memory.js"
+import { auditAppend, auditItems, pickAgent } from "./administration.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -103,6 +104,40 @@ export const Plugin = {
     })
 
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "agent_pick",
+        options: { codemode: false },
+        description: "Recommend an installed worker agent based on the actual task, without creating an agent or changing any permissions.",
+        input: Schema.Struct({ task: Schema.String }),
+        output: Schema.Struct({ agent: Schema.String, reason: Schema.String }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          const available = (yield* agents.list())
+            .filter((agent) => agent.id !== JarvisAgent.ID && agent.mode !== "primary")
+            .map((agent) => ({ id: String(agent.id), description: agent.description }))
+          const chosen = pickAgent(input.task, available)
+          if (!chosen) return yield* new ToolFailure({ message: "No usable worker agents are installed." })
+          return { agent: chosen.id, reason: chosen.description ?? "Available registered worker agent" }
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.agent + ": " + output.reason })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Agent recommendation failed", error })),
+        ),
+      })
+      editor.add({
+        name: "worker_audit",
+        options: { codemode: false },
+        description: "Inspect a worker's durable action audit entries, including task creation and model/agent switches. Limited to the current Jarvis session's owned worker.",
+        input: Schema.Struct({ sessionID: SessionSchema.ID }),
+        output: Schema.Array(Schema.Struct({ action: Schema.String, detail: Schema.String, at: Schema.Number })),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          const current = yield* worker(context.sessionID, input.sessionID)
+          return auditItems(current.metadata)
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.action + ": " + x.detail).join("\n") : "No audit entries." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to read worker audit", error })),
+        ),
+      })
       editor.add({
         name: "memory_save",
         options: { codemode: false },
@@ -249,7 +284,12 @@ export const Plugin = {
               title: input.title.trim() || input.instruction.slice(0, 70),
               agent: selected.id,
               ...(workerModel ? { model: workerModel } : {}),
-              metadata: { jarvis: { role: "worker", queue: { status: "queued", instruction: input.instruction } } },
+              metadata: auditAppend(
+                { jarvis: { role: "worker", queue: { status: "queued", instruction: input.instruction } } },
+                "create",
+                "Agent " + selected.id + " / " + (workerModel ? workerModel.providerID + "/" + workerModel.id : "default model"),
+                Date.now(),
+              ),
               // A child otherwise inherits the brain's read-only deny rules.
               // An empty session ruleset lets the worker agent's own permissions apply.
               permissions: [],
@@ -394,7 +434,12 @@ export const Plugin = {
           const selected = yield* agents.select(Agent.ID.make(input.agent))
           if (!selected.info || selected.id === JarvisAgent.ID)
             return yield* new ToolFailure({ message: "Invalid worker agent" })
+          const current = yield* sessions.get(input.sessionID)
           yield* sessions.switchAgent({ sessionID: input.sessionID, agent: selected.id })
+          yield* sessions.setMetadata({
+            sessionID: input.sessionID,
+            metadata: auditAppend(current.metadata, "agent_switch", String(selected.id), Date.now()),
+          })
           return { sessionID: input.sessionID, agent: String(selected.id) }
         }).pipe(
           Effect.map((output) => ({ output, content: "Worker agent updated to " + output.agent })),
@@ -413,7 +458,12 @@ export const Plugin = {
           const available = yield* models.available()
           if (!available.some((model) => model.providerID + "/" + model.id === input.model))
             return yield* new ToolFailure({ message: "Requested worker model is not available" })
+          const current = yield* sessions.get(input.sessionID)
           yield* sessions.switchModel({ sessionID: input.sessionID, model: ModelSchema.Ref.parse(input.model) })
+          yield* sessions.setMetadata({
+            sessionID: input.sessionID,
+            metadata: auditAppend(current.metadata, "model_switch", input.model, Date.now()),
+          })
           return { sessionID: input.sessionID, model: input.model }
         }).pipe(
           Effect.map((output) => ({ output, content: "Worker model updated to " + output.model })),
