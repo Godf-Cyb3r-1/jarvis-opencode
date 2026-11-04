@@ -28,7 +28,8 @@ export class JarvisSideHistory {
       "Side conversation " + (i + 1) + "\nUser: " + turn.user + "\nJarvis: " + turn.assistant,
     ).join("\n\n")
     return [
-      JARVIS_SIDE_PERSONA_VERSION,\n      instructions,
+      JARVIS_SIDE_PERSONA_VERSION,
+      instructions,
       context ? "Previous independent Jarvis side conversation (context only):\n" + context : "",
       "User's latest message:\n" + question,
     ].filter(Boolean).join("\n\n")
