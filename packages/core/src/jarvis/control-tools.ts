@@ -5,6 +5,7 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import { DateTime, Effect, Schema, Semaphore } from "effect"
 import { Agent } from "../agent.js"
 import { Model } from "../model.js"
+import { KV } from "../kv.js"
 import { Model as ModelSchema } from "@opencode/schema/model"
 import { Session } from "../session.js"
 import { SessionSchema } from "../session/schema.js"
@@ -39,6 +40,7 @@ export const Plugin = {
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
     const models = yield* Model.Service
+    const kv = yield* KV.Service
     // Prevent parallel tool calls from slipping past the four-slot capacity check.
     const gate = yield* Semaphore.make(1)
     // Queue tasks per OpenCode plugin instance; do not start a fifth prompt until a slot releases.
@@ -141,15 +143,17 @@ export const Plugin = {
       editor.add({
         name: "memory_save",
         options: { codemode: false },
-        description: "Save one useful fact the user explicitly wants Jarvis to remember in this session. Do not collect secrets or invent facts. The memory is durable in this OpenCode session, not global across all projects.",
+        description: "Save a fact the user explicitly wants Jarvis to remember for this OpenCode project. Available across Jarvis sessions within the project; do not save secrets or invent facts.",
         input: Schema.Struct({ text: Schema.String }),
         output: Schema.Struct({ id: Schema.String, saved: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
           const parent = yield* authorize(context.sessionID, context.agent)
           if (!input.text.trim()) return yield* new ToolFailure({ message: "Memory cannot be empty." })
           const id = "mem_" + crypto.randomUUID()
-          const metadata = remember(parent.metadata, input.text, id, Date.now())
-          yield* sessions.setMetadata({ sessionID: context.sessionID, metadata })
+          const key = "jarvis:memory:project:" + parent.projectID
+          const previous = yield* kv.get(key)
+          const metadata = remember(previous as Record<string, unknown> | undefined, input.text, id, Date.now())
+          yield* kv.set(key, metadata as KV.Value)
           return { id, saved: true }
         }).pipe(
           Effect.map((output) => ({ output, content: "Remembered in this session: " + output.id })),
@@ -159,12 +163,13 @@ export const Plugin = {
       editor.add({
         name: "memory_find",
         options: { codemode: false },
-        description: "Search durable facts saved for the current Jarvis session. Results never imply facts were saved globally.",
+        description: "Search saved facts scoped to this OpenCode project across Jarvis sessions. Not shared with other projects.",
         input: Schema.Struct({ query: Schema.String }),
         output: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String, at: Schema.Number })),
         execute: (input, context) => Effect.gen(function* () {
           const parent = yield* authorize(context.sessionID, context.agent)
-          return findMemories(parent.metadata, input.query, 10)
+          const previous = yield* kv.get("jarvis:memory:project:" + parent.projectID)
+          return findMemories(previous as Record<string, unknown> | undefined, input.query, 10)
         }).pipe(
           Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.id + ": " + x.text).join("\n") : "No saved memories found for this session." })),
           Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to search memory", error })),
@@ -173,13 +178,15 @@ export const Plugin = {
       editor.add({
         name: "memory_forget",
         options: { codemode: false },
-        description: "Delete a specific saved memory by its exact ID in this Jarvis session, when the user asks.",
+        description: "Delete a specific project-scoped saved memory by its exact ID, when the user asks.",
         input: Schema.Struct({ id: Schema.String }),
         output: Schema.Struct({ removed: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
           const parent = yield* authorize(context.sessionID, context.agent)
-          const result = forget(parent.metadata, input.id)
-          if (result.removed) yield* sessions.setMetadata({ sessionID: context.sessionID, metadata: result.metadata })
+          const key = "jarvis:memory:project:" + parent.projectID
+          const previous = yield* kv.get(key)
+          const result = forget(previous as Record<string, unknown> | undefined, input.id)
+          if (result.removed) yield* kv.set(key, result.metadata as KV.Value)
           return { removed: result.removed }
         }).pipe(
           Effect.map((output) => ({ output, content: output.removed ? "Memory removed." : "Memory ID not found." })),
