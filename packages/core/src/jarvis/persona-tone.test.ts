@@ -23,5 +23,5 @@ test("OmniVoice, spoken wording and exact technical details remain balanced", ()
   }
   expect(persona).toContain("Casual replies are pure spoken text")
   expect(persona).toContain("Do not change exact numbers")
-  expect(persona).toContain("text-only")
+  expect(persona).toContain("The UI may display precise technical artifacts")
 })
