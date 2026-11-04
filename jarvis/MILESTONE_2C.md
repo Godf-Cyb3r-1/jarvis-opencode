@@ -9,13 +9,13 @@ The 4 November 2026 Linux test shows native worker delegation, a real 4-worker a
 ## Implemented
 
 1. **Persona v0.2:** a person rather than a Q&A robot. Do not append an obligatory question. React to casual conversation without creating a worker. Operational updates are concise and explicit; model-based work is delegated.
-2. **Parallel quick conversation:** `/talk <your message>` in the existing OpenCode TUI opens a separate one-shot side-generation from the current session context. This is implemented on OpenCode's native `session.generate` path. It does not mutate the active main conversation, request tools, or interrupt ongoing worker sessions. The existing `/btw` remains unchanged.
+2. **Parallel quick conversation:** `/talk <your message>` in the existing OpenCode TUI opens a separate side-generation from the current session context. This is implemented on OpenCode's native `session.generate` path. A bounded per-session in-memory side history remembers up to six prior exchanges, letting follow-up questions retain conversational context. It does not mutate the active main conversation, request tools, or interrupt ongoing worker sessions. The existing `/btw` remains unchanged.
 3. **OmniVoice text-only expression compatibility:** the exact thirteen supported text tags are documented in the persona and validated for the `/talk` response. Unknown and repeated tags are stripped and reported to the developer console; code spans and Markdown links are preserved. No audio is generated, and tags are optional rather than forced on every response.
 4. Tests cover the full exact token list, repeated/unknown markers, plain technical responses and markdown code preservation.
 
 ## What is NOT yet solved
 
-- `/talk` is a **one-shot parallel side question**, not an indefinitely persistent secondary conversational session. The main session still serializes its own model calls. Multiple `/talk` requests may be limited by provider concurrency or token quota.
+- `/talk` is a **bounded multi-turn parallel conversation lane**, not an indefinitely persistent or restart-durable secondary conversational session. The main session still serializes its own model calls. Multiple `/talk` requests may be limited by provider concurrency or token quota. The in-memory side history is lost at process restart; durable memory belongs to a later milestone.
 - Runtime-generated *ordinary* Jarvis messages are still governed primarily by the persona; they are not currently normalized by the new `/talk` validator. Do not claim global tag enforcement.
 - No speech synthesis/recognition or OmniVoice playback. Text-only markers are not sound.
 - Profile memory, proactive event-driven conversation, and full persistent parallel Jarvis brain are future milestones.
@@ -51,7 +51,9 @@ Expected version: `opencode v2.2.5`.
 ```
 Verify the one-shot dialog arrives without stopping the worker or waiting for its completion. Close the dialog and check `session_status` for the original worker. If the main Jarvis turn itself is still generating, use `/talk` from the global command palette; the side reply uses a separate request.
 
-**5. Compare with `/btw`.** `/btw What was the original worker assignment?` uses original neutral no-tool side-response. `/talk` uses Jarvis conversational tone. Neither should mutate the task.
+**5. Follow-up continuity.** After one `/talk` response, ask `/talk What did I just tell you?`. Jarvis should recall the last side exchange without touching the worker history.
+
+**6. Compare with `/btw`.** `/btw What was the original worker assignment?` uses original neutral no-tool side-response. `/talk` uses Jarvis conversational tone. Neither should mutate the task.
 
 ## Development test
 
@@ -59,6 +61,7 @@ Verify the one-shot dialog arrives without stopping the worker or waiting for it
 bun install --frozen-lockfile
 (cd packages/core && bun test src/jarvis/)
 (cd packages/tui && bun test src/feature-plugins/prompt/jarvis-expression.test.ts)
+(cd packages/tui && bun test src/feature-plugins/prompt/jarvis-side-history.test.ts)
 bun run --cwd packages/core typecheck
 bun run --cwd packages/tui typecheck
 ```
