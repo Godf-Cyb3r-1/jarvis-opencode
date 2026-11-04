@@ -45,3 +45,20 @@ test("OmniVoice acting tags are supported and text-only", () => {
   expect(persona).toContain("[dissatisfaction-hnn]")
   expect(persona).toContain("text-only")
 })
+
+test("spoken persona bans repetitive corporate phrasing and stock AI jokes", () => {
+  for (const phrase of [
+    "sharp and ready to help",
+    "what's on your plate",
+    "take something off your plate",
+    "sorry to hear that",
+    "systems are quiet",
+    "anti-gravity books",
+    "scarecrows",
+    "atoms",
+    "React first",
+    "very beginning",
+  ]) expect(persona.toLowerCase()).toContain(phrase.toLowerCase())
+  expect(persona).toContain("Indian-English rhythm")
+  expect(persona).toContain("not a corporate helpdesk")
+})
