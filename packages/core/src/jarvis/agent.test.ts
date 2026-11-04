@@ -23,5 +23,5 @@ test("Jarvis persona remains text-only and limits optional OmniVoice expressions
   expect(persona).toContain("[laughter]")
   expect(persona).toContain("[sigh]")
   expect(persona).toContain("at most one")
-  expect(persona).toContain("current Linux build is text-only")
+  expect(persona).toContain("Linux release is **text-only**")
 })
