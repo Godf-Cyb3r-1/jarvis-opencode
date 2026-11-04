@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.2.0-dev.5** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.2.0-dev.6** (native Jarvis assistant, conversational quality under live evaluation)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -89,3 +89,6 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 - `0.2.0-dev.4`: M2D text personality improvement after live greeting/frustration/humour acceptance failure. Natural Indian-English companion style without phonetic stereotypes, avoidance of fake memories and repetitive helpdesk endings; updated /talk tone guidance and tests. [PR #8](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/8), merge `000aaa96ec086ccb29ae7367b9c52d3faadc4ac8`. [CI 41766920933](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41766920933) PASS. The Linux executable still provides text only. Indian-accent speech and actual OmniVoice playback are NOT implemented; normal main-session expression tags remain model-dependent and are not guaranteed.
 
 - `0.2.0-dev.5`: M2E persona repair after live acceptance failed again. Replaced overlapping programmer-focused persona sections with a single **personal-life-first** contract. Plain Indian English, everyday conversations/jokes/relationships/planning; technology only when relevant. The /talk instructions are aligned and coding-worker isolation is preserved. [PR #9](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/9) merged at `baeaaa9598a66d422d48651837ac3bf664499c04`. [CI 41768286316](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41768286316) passed (core/TUI tests, typechecks, Linux build and agent smoke). **Live conversation quality pending; no audible Indian accent or voice engine.**
+
+
+- `0.2.0-dev.6`: M2F personal companion calibration: Indian-English emotional cadence, all 13 OmniVoice expression meanings, 6 user scenarios, strict final-response expression allowlist in native LLM event publisher (duplicate and unsupported markers logged/removed), and parallel /talk alignment. [PR #10](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/10), merged at `0268d4252b0e52ee8a6d6640ff6235238a3c97a6`. [CI 41770369846](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41770369846) SUCCESS (core/TUI tests and typechecks, compiled Linux binary and artifact). The model's naturalness, actual voice, and live provider behavior remain separate acceptance checks. Final text is normalized; streaming deltas may briefly contain unnormalized markers. Test instructions: `jarvis/MILESTONE_2F.md`.
