@@ -16,8 +16,8 @@ test("explicit Jarvis model overrides the OpenCode default", () => {
   const previous = process.env.JARVIS_BRAIN_MODEL
   try {
     process.env.JARVIS_BRAIN_MODEL = "opencode/example-model"
-    expect(definition().model?.providerID).toBe("opencode")
-    expect(definition().model?.id).toBe("example-model")
+    expect(String(definition().model?.providerID)).toBe("opencode")
+    expect(String(definition().model?.id)).toBe("example-model")
   } finally {
     if (previous === undefined) delete process.env.JARVIS_BRAIN_MODEL
     else process.env.JARVIS_BRAIN_MODEL = previous
