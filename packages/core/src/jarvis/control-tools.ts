@@ -150,6 +150,36 @@ export const Plugin = {
           ),
       })
       editor.add({
+        name: "session_list",
+        options: { codemode: false },
+        description: "List up to 100 workers owned by this Jarvis session with actual states in a single call. Prefer this to repeated peeks or polling. Worker completion is not proof that files were delivered.",
+        input: Schema.Struct({}),
+        output: Schema.Array(Schema.Struct({
+          sessionID: SessionSchema.ID,
+          title: Schema.optionalKey(Schema.String),
+          status: Schema.Literals(["running", "idle", "queued", "completed", "failed", "cancelled"]),
+          outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
+        })),
+        execute: (_, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          const children = yield* sessions.list({ parentID: context.sessionID, limit: 100 })
+          const active = yield* sessions.active
+          return children.data.filter((info) => isWorkerOf(info, context.sessionID)).map((info) => ({
+            sessionID: info.id,
+            ...(info.title !== undefined ? { title: info.title } : {}),
+            ...derive({ scheduled: scheduler.get(info.id)?.status, active: active.has(info.id), outcome: info.outcome }),
+          }))
+        }).pipe(
+          Effect.map((output) => ({
+            output,
+            content: output.length
+              ? output.map((item) => item.sessionID + " | " + item.status + " | " + (item.title ?? "Untitled")).join("\n")
+              : "No owned worker sessions found.",
+          })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to list workers", error })),
+        ),
+      })
+      editor.add({
         name: "session_status",
         options: { codemode: false },
         description: "Inspect actual live/queued/completed/failed state of an owned worker. A completed session means its execution ended, not that the deliverable was verified. Never infer task success from session status alone.",
