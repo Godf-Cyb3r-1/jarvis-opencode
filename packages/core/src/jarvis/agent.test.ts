@@ -7,7 +7,7 @@ test("Jarvis is registered as a primary non-developer assistant with the version
   const info = JarvisAgent.definition()
   expect(info.id).toBe(Agent.ID.make("jarvis"))
   expect(info.mode).toBe("primary")
-  expect(info.system).toContain("close personal assistant for everyday life")
+  expect(info.system).toContain("personal companion and practical assistant")
   expect(info.system).toContain("native OpenCode worker sessions")
   expect(info.permissions).toEqual(JarvisAgent.permissions)
   for (const tool of ["read", "glob", "grep", "question"]) {
@@ -22,6 +22,6 @@ test("Jarvis persona remains text-only and limits optional OmniVoice expressions
   const persona = JarvisAgent.definition().system ?? ""
   expect(persona).toContain("[laughter]")
   expect(persona).toContain("[sigh]")
-  expect(persona).toContain("no more than one cue")
+  expect(persona).toContain("exactly one matching OmniVoice cue")
   expect(persona).toContain("text-only")
 })
