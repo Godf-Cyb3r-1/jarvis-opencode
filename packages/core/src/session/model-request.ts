@@ -318,9 +318,14 @@ export const layer = Layer.effect(
         yield* Effect.logInfo("jarvis.prompt.guard", {
           sessionID: session.id,
           agent: String(input.agent),
+          sessionAgent: String(session.agent ?? "default"),
+          model: String(model.ref.id),
+          provider: String(model.ref.providerID),
           personaVersion: PERSONA_VERSION,
           systemParts: system.length,
           discardedAdditionalSystemParts: shaped.system.length - system.length,
+          previousMessages: shaped.messages.length,
+          // Never log private prompt or user text.
         })
       }
       // Some free gateways reject sampling parameters. Leave the default
