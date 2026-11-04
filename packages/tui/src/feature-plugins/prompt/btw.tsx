@@ -13,6 +13,9 @@ import { useToast } from "../../ui/toast"
 import { getScrollAcceleration } from "../../util/scroll"
 import { normalizeExpressionTags } from "./jarvis-expression"
 import { JarvisSideHistory } from "./jarvis-side-history"
+import { useTuiPaths } from "../../context/runtime"
+import { readJson, writeJsonAtomic } from "../../util/persistence"
+import path from "path"
 
 // session.generate exposes the session's tools but runs no tool loop, so a
 // tool call would surface as an empty answer.
@@ -48,6 +51,8 @@ export default Plugin.define({
         const toast = useToast()
         // Dialogs render beside PluginProvider, so Answer cannot call usePlugin().
         const plugins = usePlugin()
+        const file = path.join(useTuiPaths().state, "jarvis-side-history.json")
+        const loaded = readJson<unknown>(file).then((data) => sideHistory.restore(data)).catch(() => undefined)
         context.keymap.layer(() => ({
           mode: "global",
           commands: [
@@ -96,6 +101,7 @@ export default Plugin.define({
                 const question =
                   input?.trim() || (await context.ui.dialog.prompt({ title: "Talk to Jarvis", placeholder: "What's on your mind?" }))
                 if (!question) return
+                await loaded
                 setPending((count) => count + 1)
                 // A short conversation-only reminder; primary Jarvis sessions
                 // use the single canonical provider-bound persona in core.
@@ -114,6 +120,9 @@ export default Plugin.define({
                   .then((result) => {
                     const reply = normalizeExpressionTags(result.text.trim())
                     sideHistory.remember(route.sessionID, question, reply.text)
+                    void writeJsonAtomic(file, sideHistory.snapshot()).catch((error) => {
+                      console.warn("[jarvis] Could not persist side conversation", error)
+                    })
                     if (reply.rejected.length) {
                       console.warn("[jarvis] Unsupported or repeated expression markers suppressed", reply.rejected)
                     }
