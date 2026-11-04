@@ -276,10 +276,11 @@ export const Plugin = {
         output: Schema.Struct({ sessionID: SessionSchema.ID, admitted: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
-          yield* worker(context.sessionID, input.sessionID)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
+          const current = yield* worker(context.sessionID, input.sessionID)
           if (!input.instruction.trim())
             return yield* new ToolFailure({ message: "Follow-up instruction cannot be empty." })
-          if (scheduler.get(input.sessionID)?.status === "queued")
+          if (scheduler.get(input.sessionID)?.status === "queued" || recoverableQueuedInstruction(current))
             return yield* new ToolFailure({ message: "Worker is queued. Wait for it to start before sending follow-ups." })
           yield* sessions.prompt({ sessionID: input.sessionID, text: input.instruction })
           return { sessionID: input.sessionID, admitted: true }
@@ -383,8 +384,19 @@ export const Plugin = {
         output: Schema.Struct({ sessionID: SessionSchema.ID, interrupted: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
-          yield* worker(context.sessionID, input.sessionID)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
+          const current = yield* worker(context.sessionID, input.sessionID)
+          const wasQueued = scheduler.get(input.sessionID)?.status === "queued" ||
+            recoverableQueuedInstruction(current) !== undefined
           const cancelled = scheduler.cancel(input.sessionID)
+          if (wasQueued) {
+            yield* sessions.setMetadata(input.sessionID, {
+              metadata: {
+                ...(current.metadata ?? {}),
+                jarvis: { role: "worker", queue: { status: "cancelled" } },
+              },
+            })
+          }
           const interrupted = cancelled || (yield* sessions.interrupt(input.sessionID))
           return { sessionID: input.sessionID, interrupted }
         }).pipe(
