@@ -314,13 +314,18 @@ export const layer = Layer.effect(
       // selection above is still used for tools and worker configuration.
       const jarvisRequest = input.agent === JarvisAgent.ID
       const system = canonicalSystem(input.agent, shaped.system)
-      if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+      if (process.env.JARVIS_PROMPT_DIAGNOSTICS === "1" && kind === "primary") {
         yield* Effect.logInfo("jarvis.prompt.guard", {
           sessionID: session.id,
           agent: String(input.agent),
-          personaVersion: PERSONA_VERSION,
+          sessionAgent: String(session.agent ?? "default"),
+          model: String(model.ref.id),
+          provider: String(model.ref.providerID),
+          personaVersion: jarvisRequest ? PERSONA_VERSION : "NOT_JARVIS",
           systemParts: system.length,
           discardedAdditionalSystemParts: shaped.system.length - system.length,
+          previousMessages: shaped.messages.length,
+          // Never log private prompt or user text.
         })
       }
       // Some free gateways reject sampling parameters. Leave the default
