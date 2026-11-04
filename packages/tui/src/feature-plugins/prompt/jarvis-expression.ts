@@ -31,7 +31,7 @@ export function normalizeExpressionTags(text: string): {
   const chunks = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g)
   const normalized = chunks.map((chunk) => {
     if (chunk.startsWith("`")) return chunk
-    return chunk.replace(bracketedWord, (match, raw: string) => {
+    return chunk.replace(/ *\u2014 */g, ", ").replace(bracketedWord, (match, raw: string) => {
       if (!supported.has(raw)) {
         rejected.push(match)
         return ""
