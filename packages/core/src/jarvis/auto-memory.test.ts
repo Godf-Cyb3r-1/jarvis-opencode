@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { extractFacts, learnFromUserTexts, memoryContext } from "./auto-memory"
+import { forget } from "./memory"
 
 test("extracts the user's colour preferences without requiring an explicit remember command", () => {
   expect(extractFacts("I would like dark blue color and often red color too")).toEqual([
@@ -35,4 +36,13 @@ test("learns explicit communication preferences without capturing arbitrary pers
   const values = extractFacts("I prefer concise status updates")
   expect(values).toHaveLength(1)
   expect(values[0]?.text).toBe("The user prefers concise status updates.")
+})
+
+test("forgetting a learned preference prevents its re-import from old messages", () => {
+  const first = learnFromUserTexts({}, ["I like dark blue color"], 100)
+  const forgotten = forget(first.state, "auto:favorite-colors")
+  expect(forgotten.removed).toBe(true)
+  const replay = learnFromUserTexts(forgotten.metadata, ["I like dark blue color"], 200)
+  expect(replay.changed).toBe(false)
+  expect(memoryContext(replay.state)).toBeUndefined()
 })
