@@ -37,6 +37,7 @@ import * as JarvisAgent from "../jarvis/agent.js"
 import { KV } from "../kv.js"
 import { SessionStore } from "./store.js"
 import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
+import { itemsOf } from "../jarvis/memory.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -375,6 +376,15 @@ export const layer = Layer.effect(
             )
             if (learned.changed) yield* kv.set(key, learned.state as KV.Value)
             if (!alreadyBackfilled) yield* kv.set(marker, true)
+            if (process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+              yield* Effect.logInfo("jarvis.auto_memory", {
+                sessionID: String(session.id),
+                importedUserMessages: oldTexts.length,
+                currentUserMessages: texts.length,
+                changed: learned.changed,
+                recalledFacts: itemsOf(learned.state).length,
+              })
+            }
             return memoryContext(learned.state)
           }).pipe(Effect.catchAll((error) =>
             Effect.logWarning("jarvis.auto_memory.unavailable", { error: String(error) })
