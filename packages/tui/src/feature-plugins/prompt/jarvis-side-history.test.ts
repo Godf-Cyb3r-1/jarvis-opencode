@@ -35,3 +35,16 @@ test("side context preserves square-bracket expression tags, not clocks", () => 
   expect(cleanSideContext("[laughter] That is funny.")).toBe("[laughter] That is funny.")
   expect(cleanSideContext("Meet at 5:51 PM")).toBe("Meet at 5:51 PM")
 })
+
+test("parallel /talk transcript is restored after restart without mixing sessions", () => {
+  const first = new JarvisSideHistory(3)
+  first.remember("ses_abc", "hello", "vanakkam")
+  first.remember("ses_other", "work?", "still running")
+  const persisted = JSON.parse(JSON.stringify(first.snapshot()))
+  const restored = new JarvisSideHistory(3)
+  restored.restore(persisted)
+  expect(restored.count("ses_abc")).toBe(1)
+  expect(restored.count("ses_other")).toBe(1)
+  expect(restored.prompt("ses_abc", "instructions", "how are you")).toContain("vanakkam")
+  expect(restored.prompt("ses_abc", "instructions", "how are you")).not.toContain("still running")
+})
