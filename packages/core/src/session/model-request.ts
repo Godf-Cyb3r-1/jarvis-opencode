@@ -323,7 +323,18 @@ export const layer = Layer.effect(
           discardedAdditionalSystemParts: shaped.system.length - system.length,
         })
       }
-      const entries = Object.entries(shaped.options)
+      // Some free gateways reject sampling parameters. Leave the default
+      // untouched unless the user explicitly opts in to this supported
+      // generation key for a live provider A/B test.
+      const temperatureEnv = jarvisRequest ? process.env.JARVIS_TEMPERATURE : undefined
+      const temperature = temperatureEnv === undefined ? undefined : Number(temperatureEnv)
+      const temperatureAllowed = temperature !== undefined &&
+        Number.isFinite(temperature) && temperature >= 0 && temperature <= 2 &&
+        GENERATION_KEYS.has("temperature")
+      const requestOptions = temperatureAllowed
+        ? { ...shaped.options, temperature }
+        : shaped.options
+      const entries = Object.entries(requestOptions)
       const generation = Object.fromEntries(entries.filter(([k]) => GENERATION_KEYS.has(k))) as GenerationOptionsFields
       const providerOptions = Object.fromEntries(entries.filter(([k]) => !GENERATION_KEYS.has(k)))
       const affinity = SessionAffinity.get(session)
