@@ -313,7 +313,41 @@ export const layer = Layer.effect(
       // silently supersede the embedded personal-assistant persona. The
       // selection above is still used for tools and worker configuration.
       const jarvisRequest = input.agent === JarvisAgent.ID
+      // A free gateway can misreport zero-tool requests as a usage-limit 429.
+      // The snapshot has already applied session and agent permissions. Keep
+      // one genuinely registered read tool even if a context hook removed it.
+      if (jarvisRequest && !hooked.has("read")) {
+        const inspection = tools.definitions.find((definition) => definition.name === "read")
+        if (inspection) hooked.set("read", inspection)
+      }
+      // Opt-in differential probe: isolate whether extra controller tools
+      // are rejected by a gateway, without permanently disabling delegation.
+      if (jarvisRequest && process.env.JARVIS_GATEWAY_TOOL_PROFILE === "inspection") {
+        for (const name of hooked.keys()) {
+          if (!["read", "glob", "grep", "question"].includes(name)) hooked.delete(name)
+        }
+      }
       const system = canonicalSystem(input.agent, shaped.system)
+      if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+        const canonicalID = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(String(session.id))
+        yield* Effect.logInfo("jarvis.gateway.request_shape", {
+          selectedAgent: String(input.agent),
+          requestKind: kind,
+          model: String(model.ref.providerID) + "/" + String(model.ref.id),
+          canonicalSessionID: canonicalID,
+          toolCount: hooked.size,
+          toolNames: Array.from(hooked.keys()),
+          hasReadTool: hooked.has("read"),
+          profile: process.env.JARVIS_GATEWAY_TOOL_PROFILE === "inspection" ? "inspection" : "full",
+        })
+        if (!canonicalID || !hooked.has("read")) {
+          yield* Effect.logWarning("jarvis.gateway.compatibility_risk", {
+            canonicalSessionID: canonicalID,
+            hasReadTool: hooked.has("read"),
+            advice: "Try a new Jarvis session. Verify tool registration and free-model permissions.",
+          })
+        }
+      }
       if (!jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
         yield* Effect.logWarning("jarvis.persona.not_applied", {
           sessionID: session.id,
