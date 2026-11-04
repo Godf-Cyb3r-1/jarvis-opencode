@@ -7,8 +7,8 @@ test("Jarvis is registered as a primary non-developer assistant with the version
   const info = JarvisAgent.definition()
   expect(info.id).toBe(Agent.ID.make("jarvis"))
   expect(info.mode).toBe("primary")
-  expect(info.system).toContain("personal assistant for everyday life")
-  expect(info.system).toContain("Never directly perform coding or shell commands in the Jarvis brain")
+  expect(info.system).toContain("personal assistant and companion")
+  expect(info.system).toContain("Do not use shell or file-writing tools directly as Jarvis")
   expect(info.permissions).toEqual(JarvisAgent.permissions)
   for (const tool of ["read", "glob", "grep", "question"]) {
     expect(Permission.evaluate(tool, "some/path", info.permissions).effect).toBe("allow")
