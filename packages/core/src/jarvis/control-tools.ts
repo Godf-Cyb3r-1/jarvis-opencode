@@ -115,7 +115,7 @@ export const Plugin = {
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
           const available = (yield* agents.list())
-            .filter((agent) => agent.id !== JarvisAgent.ID && agent.mode !== "primary")
+            .filter((agent) => agent.id !== JarvisAgent.ID && !agent.hidden)
             .map((agent) => ({ id: String(agent.id), description: agent.description }))
           const chosen = pickAgent(input.task, available)
           if (!chosen) return yield* new ToolFailure({ message: "No usable worker agents are installed." })
@@ -255,7 +255,7 @@ export const Plugin = {
       editor.add({
         name: "session_create",
         options: { codemode: false },
-        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Use agent_list to choose an appropriate agent first. Returns an actual worker session ID and the actual running/queued state. At most four run simultaneously; a fifth session is queued automatically and does not count as started.",
+        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Jarvis chooses a suitable installed agent if none is specified; an explicit agent wins. Returns an actual worker session ID and the actual running/queued state. At most four run simultaneously; a fifth session is queued automatically and does not count as started.",
         input: Schema.Struct({
           title: Schema.String,
           instruction: Schema.String,
@@ -273,7 +273,11 @@ export const Plugin = {
             yield* restoreQueue(context.sessionID)
             if (!input.instruction.trim())
               return yield* new ToolFailure({ message: "Worker instruction cannot be empty." })
-            const selected = yield* agents.select(Agent.ID.make(input.agent ?? "build"))
+            const availableAgents = (yield* agents.list())
+              .filter((agent) => agent.id !== JarvisAgent.ID && !agent.hidden)
+              .map((agent) => ({ id: String(agent.id), description: agent.description }))
+            const chosenID = input.agent ?? pickAgent(input.instruction, availableAgents)?.id ?? "build"
+            const selected = yield* agents.select(Agent.ID.make(chosenID))
             if (selected.id === JarvisAgent.ID)
               return yield* new ToolFailure({ message: "Jarvis cannot be used as a worker agent." })
             if (!selected.info)
