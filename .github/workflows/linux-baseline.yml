@@ -1,4 +1,4 @@
-name: Jarvis M2 Linux release
+name: Jarvis M2B Linux release
 on:
   push:
     branches: [main]
@@ -50,7 +50,7 @@ jobs:
           echo "$reported"
           test "$reported" = "opencode v2.2.5"
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
-          printf "Jarvis 0.2.0-dev.1 | OpenCode v2.2.5\nNative model-callable worker-control tools; in-memory four-worker queue. Live provider testing and restart recovery are pending.\n" > artifact/BUILD_STATUS.txt
+          printf "Jarvis 0.2.0-dev.2 | OpenCode v2.2.5\nNative worker status/outcome reliability, session_list and activity/timestamps; 4-slot in-memory queue. Live provider acceptance and restart recovery remain pending.\n" > artifact/BUILD_STATUS.txt
       - name: Verify compiled native Jarvis agent registration
         shell: bash
         run: |
@@ -58,6 +58,6 @@ jobs:
           jq -e 'any(.id == "jarvis" and .mode == "primary")' /tmp/agents.json
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-m2-linux-x64
+          name: jarvis-m2b-main-linux-x64
           path: artifact/
           if-no-files-found: error
