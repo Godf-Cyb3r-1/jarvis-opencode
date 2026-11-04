@@ -1,8 +1,10 @@
-name: Jarvis persona Linux x64 build
+name: Jarvis integrated Linux x64 build
 on:
   push:
     branches:
       - fix/jarvis-persona-pipeline-20261104
+      - feature/jarvis-m3-m8-integrated
+      - feature/jarvis-m3-durable-worker-queue
     paths:
       - 'packages/**'
       - 'jarvis/**'
@@ -52,11 +54,14 @@ jobs:
           test "$(artifact/jarvis-opencode-linux-x64 --version)" = 'opencode v2.2.5'
           timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone >/tmp/jarvis-agents.json
           jq -e 'any(.id == "jarvis" and .mode == "primary" and ((.system // "") | contains("JARVIS_PERSONA_VERSION_UNIVERSAL_V2")))' /tmp/jarvis-agents.json
+          # Preserve the known-good implicit model selection; never pin the quota-exhausted -free model.
+          jq -e 'any(.id == "jarvis" and .model == null)' /tmp/jarvis-agents.json
+          jq -e 'any(.id == "jarvis" and (.permissions | any(.action == "memory_find" and .effect == "allow")))' /tmp/jarvis-agents.json
           echo "${GITHUB_SHA}" > artifact/COMMIT_SHA
-          echo 'Linux x86_64; standalone TUI binary; no Android and no audio.' > artifact/BUILD_STATUS.txt
+          echo 'Integrated Jarvis: M3 queue recovery, persistent /talk, scoped memory, worker notifications, agent selection, audit; see jarvis/INTEGRATED_TESTING.md for remaining work.' > artifact/BUILD_STATUS.txt
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-persona-linux-x64
+          name: jarvis-integrated-linux-x64
           path: artifact/
           if-no-files-found: error

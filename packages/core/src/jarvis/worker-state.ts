@@ -19,7 +19,7 @@ export function derive(input: {
   const outcome = validOutcome(input.outcome) ? input.outcome : undefined
   const status: WorkerStatus =
     input.scheduled === "queued" ? "queued" :
-    input.active ? "running" :
+    (input.active || input.scheduled === "running") ? "running" :
     input.scheduled === "cancelled" ? "cancelled" :
     input.scheduled === "failed" ? "failed" :
     outcome === "failed" ? "failed" :

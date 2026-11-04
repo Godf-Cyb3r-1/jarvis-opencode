@@ -13,6 +13,9 @@ import { useToast } from "../../ui/toast"
 import { getScrollAcceleration } from "../../util/scroll"
 import { normalizeExpressionTags } from "./jarvis-expression"
 import { JarvisSideHistory } from "./jarvis-side-history"
+import { useTuiPaths } from "../../context/runtime"
+import { readJson, writeJsonAtomic } from "../../util/persistence"
+import path from "path"
 
 // session.generate exposes the session's tools but runs no tool loop, so a
 // tool call would surface as an empty answer.
@@ -27,6 +30,41 @@ export default Plugin.define({
   setup(context) {
     const [pending, setPending] = createSignal(0)
     const sideHistory = new JarvisSideHistory(6)
+
+    // Native OpenCode execution events keep Jarvis responsive while workers
+    // run in their own sessions. Durable per-TUI dedup prevents repeat alerts.
+    const [notifications, saveNotifications] = context.storage.store("jarvis-worker-events-v1", {
+      initial: { keys: [] as string[] },
+    })
+    const notifyWorker = (kind: "completed" | "failed" | "interrupted", sessionID: string) => {
+      void (async () => {
+        await context.data.session.sync(sessionID)
+        const info = context.data.session.get(sessionID)
+        const meta = info?.metadata?.jarvis as { role?: string } | undefined
+        if (meta?.role !== "worker") return
+        const key = sessionID + ":" + kind + ":" + (info?.time?.idle ?? info?.time?.updated ?? "unknown")
+        if (notifications.keys.includes(key)) return
+        await saveNotifications((draft) => { draft.keys = [...draft.keys.slice(-199), key] })
+        const message = (info?.title || sessionID) + " " + kind
+        context.ui.toast.show({
+          title: "Jarvis worker",
+          message,
+          sessionID,
+          variant: kind === "completed" ? "success" : kind === "failed" ? "error" : "warning",
+        })
+        void context.attention.notify({
+          title: "Jarvis worker",
+          message,
+          notification: true,
+          sound: { name: kind === "completed" ? "subagent_done" : "error" },
+        })
+      })().catch((error) => console.warn("[jarvis] worker notification failed", error))
+    }
+    const events = [
+      context.data.on("session.execution.succeeded", (event) => notifyWorker("completed", event.data.sessionID)),
+      context.data.on("session.execution.failed", (event) => notifyWorker("failed", event.data.sessionID)),
+      context.data.on("session.execution.interrupted", (event) => notifyWorker("interrupted", event.data.sessionID)),
+    ]
 
     context.ui.slot({
       append: "prompt.footer.status",
@@ -48,6 +86,8 @@ export default Plugin.define({
         const toast = useToast()
         // Dialogs render beside PluginProvider, so Answer cannot call usePlugin().
         const plugins = usePlugin()
+        const file = path.join(useTuiPaths().state, "jarvis-side-history.json")
+        const loaded = readJson<unknown>(file).then((data) => sideHistory.restore(data)).catch(() => undefined)
         context.keymap.layer(() => ({
           mode: "global",
           commands: [
@@ -96,6 +136,7 @@ export default Plugin.define({
                 const question =
                   input?.trim() || (await context.ui.dialog.prompt({ title: "Talk to Jarvis", placeholder: "What's on your mind?" }))
                 if (!question) return
+                await loaded
                 setPending((count) => count + 1)
                 // A short conversation-only reminder; primary Jarvis sessions
                 // use the single canonical provider-bound persona in core.
@@ -114,6 +155,9 @@ export default Plugin.define({
                   .then((result) => {
                     const reply = normalizeExpressionTags(result.text.trim())
                     sideHistory.remember(route.sessionID, question, reply.text)
+                    void writeJsonAtomic(file, sideHistory.snapshot()).catch((error) => {
+                      console.warn("[jarvis] Could not persist side conversation", error)
+                    })
                     if (reply.rejected.length) {
                       console.warn("[jarvis] Unsupported or repeated expression markers suppressed", reply.rejected)
                     }
@@ -131,6 +175,7 @@ export default Plugin.define({
         return null
       },
     })
+    return () => { for (const dispose of events) dispose() }
   },
 })
 

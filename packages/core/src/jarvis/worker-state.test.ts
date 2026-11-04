@@ -30,3 +30,7 @@ test("latest assistant activity is concise and never reads reasoning or user pro
     .toBe("Updated index.html Now checking links.")
   expect(activitySummary([{ type: "assistant", content: [{ type: "reasoning", text: "not displayed" }] }])).toBeUndefined()
 })
+
+test("dispatched worker is running before its prompt becomes active", () => {
+  expect(derive({ scheduled: "running", active: false, outcome: null })).toEqual({ status: "running" })
+})

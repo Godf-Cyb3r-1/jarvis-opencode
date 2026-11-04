@@ -65,6 +65,34 @@ export class JarvisScheduler<T> {
     return this.get(request.id)!
   }
 
+  /** Persistable FIFO queue snapshot. Only unstarted tasks may be replayed:
+   * a running task may already have reached OpenCode before the process died.
+   */
+  queuedSnapshot(): Array<Readonly<{ id: string; input: T }>> {
+    return this.pending.flatMap((id) => {
+      const task = this.records.get(id)
+      return task?.status === "queued" ? [{ id: task.id, input: task.input }] : []
+    })
+  }
+
+  /** Restore known-unstarted work, deduplicated against this scheduler's tasks.
+   * The caller must verify that the durable session has never executed before
+   * passing it here, so restart cannot replay side-effectful instructions.
+   */
+  restoreQueued(tasks: ReadonlyArray<Readonly<{ id: string; input: T }>>): number {
+    let restored = 0
+    for (const task of tasks) {
+      if (!task.id.trim() || this.records.has(task.id)) continue
+      const queued: Task<T> = { id: task.id, input: task.input, status: "queued" }
+      this.records.set(task.id, queued)
+      this.pending.push(task.id)
+      this.notify(queued)
+      restored++
+    }
+    this.schedule()
+    return restored
+  }
+
   cancel(id: string): boolean {
     const existing = this.records.get(id)
     if (!existing || (existing.status !== "queued" && existing.status !== "running")) return false
