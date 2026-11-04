@@ -33,6 +33,7 @@ import { Cause, Context, Effect, Layer, Result, Stream } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
+import * as JarvisAgent from "../jarvis/agent.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
 import { PluginHooks } from "../plugin/hooks.js"
@@ -307,6 +308,22 @@ export const layer = Layer.effect(
           return t ? [[name, { ...t, description: d.description, inputSchema: d.input }] as const] : []
         }),
       )
+      // Final request-shape guard: plugins and location instructions must not
+      // silently supersede the embedded personal-assistant persona. The
+      // selection above is still used for tools and worker configuration.
+      const jarvisRequest = input.agent === JarvisAgent.ID
+      const system = jarvisRequest
+        ? [SystemPart.make(JarvisAgent.definition().system ?? "")]
+        : shaped.system
+      if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+        yield* Effect.logInfo("jarvis.prompt.guard", {
+          sessionID: session.id,
+          agent: String(input.agent),
+          personaVersion: "0.2.0-dev.8",
+          systemParts: system.length,
+          discardedAdditionalSystemParts: shaped.system.length - system.length,
+        })
+      }
       const entries = Object.entries(shaped.options)
       const generation = Object.fromEntries(entries.filter(([k]) => GENERATION_KEYS.has(k))) as GenerationOptionsFields
       const providerOptions = Object.fromEntries(entries.filter(([k]) => !GENERATION_KEYS.has(k)))
@@ -327,7 +344,7 @@ export const layer = Layer.effect(
         // TODO: Persist cache lineage so nested forks reuse the root session's cache key.
         promptCacheKey: /^ses_[0-9a-f]{64}$/.test(affinity) ? affinity.slice(4) : affinity,
         cache: model.cache?.ttl === undefined ? undefined : { ttl: model.cache.ttl },
-        system: shaped.system,
+        system,
         messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
         toolChoice: input.toolChoice,
