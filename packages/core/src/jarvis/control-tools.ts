@@ -211,7 +211,7 @@ export const Plugin = {
             limit: 3,
             order: "desc",
             type: "assistant",
-          }).pipe(Effect.catchAll(() => Effect.succeed([])))
+          }).pipe(Effect.catch(() => Effect.succeed([])))
           const activity = activitySummary(recent)
           return {
             sessionID: info.id,
