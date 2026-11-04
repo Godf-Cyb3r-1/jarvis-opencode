@@ -87,6 +87,15 @@ export const Plugin = {
       restoredParents.add(parentID)
     })
 
+    // Restore verified-unstarted queues at plugin activation rather than
+    // requiring Jarvis to issue a control tool after a process restart.
+    // This deliberately does not replay any worker with an execution record.
+    const existingParents = yield* sessions.list({ limit: 100, archived: false })
+    for (const parent of existingParents.data) {
+      if (parent.agent !== JarvisAgent.ID) continue
+      yield* restoreQueue(parent.id)
+    }
+
     const authorize = Effect.fn("JarvisControl.authorize")(function* (sessionID: SessionSchema.ID, agent: Agent.ID) {
       if (agent !== JarvisAgent.ID)
         return yield* new ToolFailure({ message: "Jarvis control tools are only available to the Jarvis brain." })
