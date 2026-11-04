@@ -1,0 +1,72 @@
+name: Jarvis persona Linux x64 build
+on:
+  push:
+    branches:
+      - fix/jarvis-persona-pipeline-20261104
+    paths:
+      - 'packages/**'
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-persona-linux.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: jarvis-persona-linux-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux-x64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install pinned dependencies on GitHub-hosted Linux
+        run: bun install --frozen-lockfile
+      - name: Jarvis core regression tests
+        run: bun test packages/core/src/jarvis/
+      - name: Jarvis parallel conversation regression tests
+        run: bun test packages/tui/src/feature-plugins/prompt/jarvis-expression.test.ts packages/tui/src/feature-plugins/prompt/jarvis-side-history.test.ts
+      - name: Typecheck core and TUI
+        run: |
+          bun run --cwd packages/core typecheck
+          bun run --cwd packages/tui typecheck
+      - name: Compile standalone Linux executable
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Package and verify standalone binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          executable=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$executable"
+          mkdir -p artifact
+          cp "$executable" artifact/jarvis-opencode-linux-x64
+          chmod +x artifact/jarvis-opencode-linux-x64
+          test "$(artifact/jarvis-opencode-linux-x64 --version)" = 'opencode v2.2.5'
+          timeout 90 artifact/jarvis-opencode-linux-x64 debug agents --standalone >/tmp/jarvis-agents.json
+          jq -e 'any(.id == "jarvis" and .mode == "primary" and ((.system // "") | contains("JARVIS_PERSONA_VERSION_M2H")))' /tmp/jarvis-agents.json
+          echo "${GITHUB_SHA}" > artifact/COMMIT_SHA
+          echo 'Linux x86_64; standalone TUI binary; no Android and no audio.' > artifact/BUILD_STATUS.txt
+          (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-persona-linux-x64
+          path: artifact/
+          if-no-files-found: error
+      - name: Publish downloadable Linux binary as prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=jarvis-persona-fix-20261104
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" artifact/jarvis-opencode-linux-x64 artifact/SHA256SUMS artifact/COMMIT_SHA artifact/BUILD_STATUS.txt --clobber
+          else
+            gh release create "$tag" artifact/jarvis-opencode-linux-x64 artifact/SHA256SUMS artifact/COMMIT_SHA artifact/BUILD_STATUS.txt --target "${GITHUB_SHA}" --title 'Jarvis persona fix Linux x64' --notes 'Standalone Linux build from the dedicated Jarvis persona fix branch. Separate from main and Android projects.' --prerelease
+          fi
