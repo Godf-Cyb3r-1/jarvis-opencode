@@ -10,7 +10,7 @@ import { Session } from "../session.js"
 import { SessionSchema } from "../session/schema.js"
 import * as JarvisAgent from "./agent.js"
 import { JarvisScheduler } from "./controller.js"
-import { derive } from "./worker-state.js"
+import { activitySummary, derive } from "./worker-state.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -198,6 +198,7 @@ export const Plugin = {
           createdAtMs: Schema.Number,
           startedAtMs: Schema.optionalKey(Schema.Number),
           finishedAtMs: Schema.optionalKey(Schema.Number),
+          activity: Schema.optionalKey(Schema.String),
         }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
@@ -205,16 +206,24 @@ export const Plugin = {
           const active = yield* sessions.active
           const scheduled = scheduler.get(info.id)
           const state = derive({ scheduled: scheduled?.status, active: active.has(info.id), outcome: info.outcome })
+          const recent = yield* sessions.messages({
+            sessionID: info.id,
+            limit: 3,
+            order: "desc",
+            type: "assistant",
+          }).pipe(Effect.catchAll(() => Effect.succeed([])))
+          const activity = activitySummary(recent)
           return {
             sessionID: info.id,
             ...(info.title !== undefined ? { title: info.title } : {}),
             ...state,
+            ...(activity !== undefined ? { activity } : {}),
             createdAtMs: DateTime.toEpochMillis(info.time.created),
             ...(info.time.busy ? { startedAtMs: DateTime.toEpochMillis(info.time.busy) } : {}),
             ...(!active.has(info.id) && info.time.idle ? { finishedAtMs: DateTime.toEpochMillis(info.time.idle) } : {}),
           }
         }).pipe(
-          Effect.map((output) => ({ output, content: "Worker " + output.sessionID + ": " + output.status })),
+          Effect.map((output) => ({ output, content: "Worker " + output.sessionID + ": " + output.status + (output.activity ? " | " + output.activity : "") })),
           Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to read worker status", error })),
         ),
       })
