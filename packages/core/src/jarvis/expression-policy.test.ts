@@ -21,8 +21,8 @@ test("allows at most one cue, only at the beginning", () => {
 test("universal speech punctuation and markdown cleanup is not scenario-specific", () => {
   expect(normalizeJarvisText("**Listen** — *really*; that is (quite) good!").text)
     .toBe("Listen, really. that is quite good!")
-  expect(normalizeJarvisText("# A thought\\n- Lovely & easy").text)
-    .toBe("A thought Lovely and easy")
+  expect(normalizeJarvisText("# A thought\n- Lovely & easy").text)
+    .toBe("A thought. Lovely and easy")
   expect(normalizeJarvisText("In 2-3 mins, try 5 more.").text)
     .toBe("In two to three mins, try five more.")
 })
@@ -30,7 +30,7 @@ test("universal speech punctuation and markdown cleanup is not scenario-specific
 test("keeps commands, code and links exact", () => {
   const code = "Run `sudo apt update` and open [guide](https://example.com) now."
   expect(normalizeJarvisText(code).text).toBe(code)
-  const fenced = "```bash\\necho [smile]\\n```\\nDone."
+  const fenced = "```bash\necho [smile]\n```\nDone."
   expect(normalizeJarvisText(fenced).text).toBe(fenced)
   expect(isConversationalText("git status --short")).toBe(false)
 })
