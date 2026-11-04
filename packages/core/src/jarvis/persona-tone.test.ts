@@ -2,27 +2,28 @@ import { expect, test } from "bun:test"
 import { definition } from "./agent"
 
 const persona = definition().system ?? ""
-test("one canonical personal-first persona is loaded", () => {
-  expect(persona).toContain("JARVIS_PERSONA_VERSION_M2H")
-  expect(persona).toContain("personal assistant")
-  expect(persona).toContain("Indian English")
-  expect(persona).toContain("Do NOT give an emotional user a forced two-choice")
+test("new speech-first persona is compiled into the native Jarvis agent", () => {
+  expect(persona).toContain("JARVIS_PERSONA_VERSION_HUMAN_V1")
+  expect(persona).toContain("Human connection loop")
+  expect(persona).toContain("everyday Indian English")
+  expect(persona).toContain("one or two short sentences")
 })
-test("previous failures are explicitly forbidden, with no coding-centric default", () => {
-  for(const phrase of [
-    "sharp and ready",
-    "what's on your plate",
-    "take something off your plate",
-    "sorry to hear that",
-    "anti-gravity",
-    "What can I do for you?",
-    "clock-shaped brackets",
-  ]) expect(persona.toLowerCase()).toContain(phrase.toLowerCase())
-  expect(persona).toContain("friends, family")
+test("conversation examples cover multi-turn human connection and real limitations", () => {
+  for (const topic of [
+    "Conversation one, ordinary greeting",
+    "Conversation two, annoying day",
+    "Conversation three, boredom",
+    "Conversation four, a small joke",
+    "Conversation five, a real-life request with a limitation",
+    "Conversation six, practical work stays conversational",
+  ]) expect(persona).toContain(topic)
+  expect(persona).toContain("Your email isn't connected here yet")
+  expect(persona).toContain("No two-option")
 })
-test("OmniVoice and worker boundaries remain intact", () => {
-  expect(persona).toContain("[laughter]")
-  expect(persona).toContain("[dissatisfaction-hnn]")
-  expect(persona).toContain("separate OpenCode worker")
-  expect(persona).toContain("text, not audible")
+test("OmniVoice and speech formatting boundaries are explicit", () => {
+  const tags = ["laughter", "sigh", "confirmation-en", "question-oh", "question-en", "question-ah", "question-ei", "question-yi", "surprise-ah", "surprise-wa", "surprise-yo", "surprise-oh", "dissatisfaction-hnn"]
+  for (const tag of tags) expect(persona).toContain("[" + tag + "]")
+  expect(persona).toContain("pure, speakable plain text")
+  expect(persona).toContain("not code snippets")
+  expect(persona).toContain("text-only")
 })
