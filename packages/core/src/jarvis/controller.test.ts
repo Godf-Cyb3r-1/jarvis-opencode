@@ -56,3 +56,38 @@ describe("bounded worker orchestration", () => {
     expect(q.get("two")?.status).toBe("cancelled")
   })
 })
+
+describe("durable queue handoff", () => {
+  test("captures only queued tasks and restores them once, in FIFO order", async () => {
+    const releases: Array<() => void> = []
+    const running = new JarvisScheduler<string>(1, async () => {
+      await new Promise<void>((resolve) => releases.push(resolve))
+    })
+    running.enqueue({ id: "first", input: "in progress" })
+    running.enqueue({ id: "second", input: "resume next" })
+    running.enqueue({ id: "third", input: "resume last" })
+    const snapshot = running.queuedSnapshot()
+    expect(snapshot).toEqual([
+      { id: "second", input: "resume next" },
+      { id: "third", input: "resume last" },
+    ])
+    const executionOrder: string[] = []
+    const recovered = new JarvisScheduler<string>(1, async (task) => {
+      executionOrder.push(task.id)
+    })
+    expect(recovered.restoreQueued(snapshot)).toBe(2)
+    expect(recovered.restoreQueued(snapshot)).toBe(0)
+    await flush()
+    await flush()
+    expect(executionOrder).toEqual(["second", "third"])
+    expect(recovered.queuedCount).toBe(0)
+    // Close in-flight tasks from the original scheduler so this test doesn't leak promises.
+    await flush()
+    releases[0]?.()
+    await flush()
+    releases[1]?.()
+    await flush()
+    releases[2]?.()
+    await flush()
+  })
+})
