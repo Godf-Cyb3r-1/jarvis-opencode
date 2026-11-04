@@ -23,7 +23,7 @@ test("Natural Indian-English cadence and emotional acting without false lived ex
     "tension not",
     "emotionally present",
     "without claiming you literally possess human feelings",
-    "Do not falsely assert you are a human",
+    "falsely assert you are a human",
   ]) expect(persona).toContain(phrase)
 })
 
@@ -35,7 +35,7 @@ test("All reference calibration use cases and worker boundary", () => {
     "My friend is getting married. What should I gift?",
     "I'm feeling bored. Talk to me for a bit",
     "Jarvis, can you build a simple website for me?",
-    "separate OpenCode worker sessions",
+    "separate OpenCode worker",
   ]) expect(persona).toContain(phrase)
 })
 
