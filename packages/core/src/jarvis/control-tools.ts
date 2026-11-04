@@ -2,7 +2,7 @@ export * as JarvisControlTools from "./control-tools.js"
 
 import { ToolFailure } from "@opencode/ai/effect"
 import type { Context } from "@opencode/plugin/effect/plugin"
-import { Effect, Schema, Semaphore } from "effect"
+import { DateTime, Effect, Schema, Semaphore } from "effect"
 import { Agent } from "../agent.js"
 import { Model } from "../model.js"
 import { Model as ModelSchema } from "@opencode/schema/model"
@@ -159,6 +159,9 @@ export const Plugin = {
           title: Schema.optionalKey(Schema.String),
           status: Schema.Literals(["running", "idle", "queued", "completed", "failed", "cancelled"]),
           outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
+          createdAtMs: Schema.Number,
+          startedAtMs: Schema.optionalKey(Schema.Number),
+          finishedAtMs: Schema.optionalKey(Schema.Number),
         })),
         execute: (_, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
@@ -168,6 +171,9 @@ export const Plugin = {
             sessionID: info.id,
             ...(info.title !== undefined ? { title: info.title } : {}),
             ...derive({ scheduled: scheduler.get(info.id)?.status, active: active.has(info.id), outcome: info.outcome }),
+            createdAtMs: DateTime.toEpochMillis(info.time.created),
+            ...(info.time.busy ? { startedAtMs: DateTime.toEpochMillis(info.time.busy) } : {}),
+            ...(!active.has(info.id) && info.time.idle ? { finishedAtMs: DateTime.toEpochMillis(info.time.idle) } : {}),
           }))
         }).pipe(
           Effect.map((output) => ({
@@ -189,6 +195,9 @@ export const Plugin = {
           title: Schema.optionalKey(Schema.String),
           status: Schema.Literals(["running", "idle", "queued", "completed", "failed", "cancelled"]),
           outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
+          createdAtMs: Schema.Number,
+          startedAtMs: Schema.optionalKey(Schema.Number),
+          finishedAtMs: Schema.optionalKey(Schema.Number),
         }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
@@ -200,6 +209,9 @@ export const Plugin = {
             sessionID: info.id,
             ...(info.title !== undefined ? { title: info.title } : {}),
             ...state,
+            createdAtMs: DateTime.toEpochMillis(info.time.created),
+            ...(info.time.busy ? { startedAtMs: DateTime.toEpochMillis(info.time.busy) } : {}),
+            ...(!active.has(info.id) && info.time.idle ? { finishedAtMs: DateTime.toEpochMillis(info.time.idle) } : {}),
           }
         }).pipe(
           Effect.map((output) => ({ output, content: "Worker " + output.sessionID + ": " + output.status })),
