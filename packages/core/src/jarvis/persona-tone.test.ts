@@ -3,21 +3,38 @@ import { definition } from "./agent"
 
 const persona = definition().system ?? ""
 
-test("Jarvis conversational voice follows the user's requested natural Indian English without caricature", () => {
-  expect(persona).toContain("natural Indian English")
-  expect(persona).toContain("do not pretend to experience events")
-  expect(persona).toContain("phonetic accent")
-  expect(persona).toContain("not fixed templates")
+test("Jarvis primarily serves ordinary personal life, not coding", () => {
+  for (const phrase of [
+    "personal assistant for everyday life",
+    "family and friends",
+    "daily plans",
+    "shopping decisions",
+    "ordinary relatable humour",
+    "technology is one optional area",
+  ]) expect(persona).toContain(phrase)
 })
 
-test("Jarvis handles the failed live acceptance prompts without a canned Q&A ending", () => {
+test("Use clear India-friendly English without foreign expressions or fake accent", () => {
   for (const phrase of [
-    "Hi Jarvis! How's it going today?",
-    "I had a frustrating day.",
-    "Tell me something funny.",
-    "What can I do for you?",
+    "easy-to-understand Indian English",
+    "foreign-sounding idioms",
+    "decompress",
+    "glass houses",
+    "imitate an accent",
+    "How can I help?",
   ]) expect(persona).toContain(phrase)
-  expect(persona).toContain("[laughter]")
-  expect(persona).toContain("[sigh]")
+})
+
+test("No fake programmer experiences or canned support-bot questions", () => {
+  expect(persona).toContain("Never invent experiences")
+  expect(persona).toContain("Avoid therapist-style menus")
+  expect(persona).toContain("not a programming joke unless")
+  expect(persona).toContain("never end every")
+})
+
+test("Keep separate worker execution and text-only OmniVoice cues", () => {
+  expect(persona).toContain("separate OpenCode worker session")
   expect(persona).toContain("at most one")
+  expect(persona).toContain("[laughter]")
+  expect(persona).toContain("current Linux build is text-only")
 })
