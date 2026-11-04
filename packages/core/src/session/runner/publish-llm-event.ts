@@ -16,6 +16,7 @@ import { Money } from "@opencode/schema/money"
 import { contentFilterError } from "../to-session-error.js"
 import type { Tool } from "../../tool.js"
 import { stringify } from "../../tool/runtime.js"
+import { normalizeJarvisText } from "../../jarvis/expression-policy.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -228,16 +229,30 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     return { start, append, end, flush, publishPending, has: (id: string) => chunks.has(id) }
   }
 
+  let jarvisExpressionUsed = false
   const contentFragments = (name: string, events: typeof SessionEvent.Text | typeof SessionEvent.Reasoning) =>
     fragments(
       name,
       (_id, value, ordinal, native) =>
         Effect.gen(function* () {
+          let content = value
+          if (name === "text" && input.agent === "jarvis") {
+            const clean = normalizeJarvisText(content, { alreadyUsed: jarvisExpressionUsed })
+            content = clean.text
+            if (clean.accepted) jarvisExpressionUsed = true
+            if (clean.removed.length) {
+              yield* Effect.logWarning("Jarvis response expression markers rejected", {
+                sessionID: input.sessionID,
+                count: clean.removed.length,
+                removed: clean.removed,
+              })
+            }
+          }
           yield* bus.publish(events.Ended, {
             sessionID: input.sessionID,
             assistantMessageID: yield* currentAssistantMessageID(),
             ordinal,
-            text: value,
+            text: content,
             native,
           })
         }),
