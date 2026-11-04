@@ -26,7 +26,6 @@ import { useData } from "./data"
 import { useClient } from "./client"
 import { usePermission } from "./permission"
 import { useLocation } from "./location"
-import { useClient } from "./client"
 import { parse } from "../util/model"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
@@ -43,7 +42,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const event = useEvent()
     const permission = usePermission()
     const location = useLocation()
-    const client = useClient()
 
     const models = () => data.location.model.list(location.ref)
     const providers = () => data.location.provider.list(location.ref)
@@ -266,7 +264,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             configuredModel,
             () => {
               const value = serverDefaultModel()
-              return value && { providerID: value.providerID, modelID: value.id }
+              return value ? { providerID: value.providerID, modelID: value.id } : undefined
             },
           )
         }
