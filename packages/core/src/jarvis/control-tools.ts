@@ -11,6 +11,7 @@ import { SessionSchema } from "../session/schema.js"
 import * as JarvisAgent from "./agent.js"
 import { JarvisScheduler } from "./controller.js"
 import { activitySummary, derive } from "./worker-state.js"
+import { findMemories, forget, remember } from "./memory.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -102,6 +103,81 @@ export const Plugin = {
     })
 
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "memory_save",
+        options: { codemode: false },
+        description: "Save one useful fact the user explicitly wants Jarvis to remember in this session. Do not collect secrets or invent facts. The memory is durable in this OpenCode session, not global across all projects.",
+        input: Schema.Struct({ text: Schema.String }),
+        output: Schema.Struct({ id: Schema.String, saved: Schema.Boolean }),
+        execute: (input, context) => Effect.gen(function* () {
+          const parent = yield* authorize(context.sessionID, context.agent)
+          if (!input.text.trim()) return yield* new ToolFailure({ message: "Memory cannot be empty." })
+          const id = "mem_" + crypto.randomUUID()
+          const metadata = remember(parent.metadata, input.text, id, Date.now())
+          yield* sessions.setMetadata({ sessionID: context.sessionID, metadata })
+          return { id, saved: true }
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Remembered in this session: " + output.id })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to store memory", error })),
+        ),
+      })
+      editor.add({
+        name: "memory_find",
+        options: { codemode: false },
+        description: "Search durable facts saved for the current Jarvis session. Results never imply facts were saved globally.",
+        input: Schema.Struct({ query: Schema.String }),
+        output: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String, at: Schema.Number })),
+        execute: (input, context) => Effect.gen(function* () {
+          const parent = yield* authorize(context.sessionID, context.agent)
+          return findMemories(parent.metadata, input.query, 10)
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.id + ": " + x.text).join("\n") : "No saved memories found for this session." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to search memory", error })),
+        ),
+      })
+      editor.add({
+        name: "memory_forget",
+        options: { codemode: false },
+        description: "Delete a specific saved memory by its exact ID in this Jarvis session, when the user asks.",
+        input: Schema.Struct({ id: Schema.String }),
+        output: Schema.Struct({ removed: Schema.Boolean }),
+        execute: (input, context) => Effect.gen(function* () {
+          const parent = yield* authorize(context.sessionID, context.agent)
+          const result = forget(parent.metadata, input.id)
+          if (result.removed) yield* sessions.setMetadata({ sessionID: context.sessionID, metadata: result.metadata })
+          return { removed: result.removed }
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.removed ? "Memory removed." : "Memory ID not found." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to delete memory", error })),
+        ),
+      })
+      editor.add({
+        name: "worker_events",
+        options: { codemode: false },
+        description: "Show a concise one-call worker completion/failure digest. This reads native persisted child session outcomes and does not fabricate proactive alerts.",
+        input: Schema.Struct({}),
+        output: Schema.Array(Schema.Struct({
+          sessionID: SessionSchema.ID,
+          status: Schema.Literals(["running", "idle", "queued", "completed", "failed", "cancelled"]),
+        })),
+        execute: (_, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
+          const children = yield* sessions.list({ parentID: context.sessionID, limit: 100 })
+          const active = yield* sessions.active
+          return children.data.filter((info) => isWorkerOf(info, context.sessionID)).map((info) => ({
+            sessionID: info.id,
+            status: derive({
+              scheduled: scheduler.get(info.id)?.status ?? (recoverableQueuedInstruction(info) ? "queued" : undefined),
+              active: active.has(info.id),
+              outcome: info.outcome,
+            }).status,
+          }))
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.sessionID + ": " + x.status).join("\n") : "No workers for this session." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to list worker events", error })),
+        ),
+      })
       editor.add({
         name: "agent_list",
         options: { codemode: false },
