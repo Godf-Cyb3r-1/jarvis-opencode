@@ -1,6 +1,6 @@
 # Jarvis implementation tracker
 
-Project version: **0.2.0-dev.1** (controller foundation, NOT a usable Jarvis assistant)
+Project version: **0.2.0-dev.2** (controller foundation, NOT a usable Jarvis assistant)
 OpenCode source: **2.2.5**, pinned to `ace4bbdf1ec8fd05cc8d85a812f6c7d9cad8f547`.
 Source import completed by [run 41690848100](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41690848100).
 Foundation tests passed at [run 41691589115](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41691589115).
@@ -25,7 +25,8 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 - [ ] Verify live model availability, thinking disabled, fallback and latency
 - [x] Give native Jarvis agent read-only inspection permissions (read/glob/grep/question) while keeping mutation tools denied, verified with policy tests
 - [x] Register model-callable native delegation/discovery/control tools and verify compiled source, permissions and ownership tests (M2; PR #5)
-- [ ] Verify live model-directed Jarvis delegation using a configured provider
+- [x] User-exported Linux session confirms live Jarvis-to-worker delegation and working worker follow-ups (4 Nov 2026)
+- [ ] Verify the corrected status/list/queue behavior with the updated M2B executable
 
 ### 2 — Native worker orchestration
 - [x] Four-slot scheduling and fifth-task queue unit-tested
@@ -33,8 +34,12 @@ Source + foundation merged in [PR #1](https://github.com/Godf-Cyb3r-1/jarvis-ope
 - [x] Wire the four-slot scheduler to native worker sessions, queue fifth task, and add /btw peek, compact, commands and agent/model switches (in memory)
 - [ ] Add server-event-driven proactive notifications and crash-safe queue recovery
 - [ ] Select workers' agents and models
-- [ ] Verify four real independent concurrent sessions and dynamic steering
+- [x] User-exported Linux session confirms four real independent worker sessions were created and steered
+- [ ] Live acceptance: prove queued fifth actually launches and that all statuses are correct after M2B fix
 - [ ] Persist queued/running worker states across restart
+
+- [x] M2B source fix: null running outcomes, failed/completed distinction, session_list, real timestamps, low-quota status activity
+- [ ] End-to-end status/list/fifth-queue acceptance with new Linux executable
 
 ### 3 — Persistent memory
 - [ ] Native SQLite ledger with FTS5 and trigram search
@@ -72,3 +77,5 @@ Checking a TypeScript unit test is not evidence of a working native OpenCode wor
 - `0.1.0-dev.5`: Gateway 429 request-shape fix: non-mutating brain tools, role-tagged canonical Session.Service-created IDs and reuse in native adapter. [PR #4](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/4), merge `3a31100f2beea4e1fe695c8c7136d9ce5c281c08`. [CI 41700553686](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41700553686) PASS. **Requires local live provider verification; normal CLI mode does not exercise createBrain session reuse.**
 
 - `0.2.0-dev.1`: Native Jarvis controller tools and in-memory 4-worker scheduler, fifth queued. [PR #5](https://github.com/Godf-Cyb3r-1/jarvis-opencode/pull/5), merged at `44949aab173bd2f2c8d560d69827144a6c4d98a7`; [CI 41704040467](https://github.com/Godf-Cyb3r-1/jarvis-opencode/actions/runs/41704040467) PASS for source commit `edaf5688`. Live model-backed delegation and restart recovery remain acceptance items. See `jarvis/MILESTONE_2A.md`.
+
+- `0.2.0-dev.2`: Export-driven M2B reliability fixes: native status null/outcome normalization, accurate failed execution result, single-call session inventory, real worker timestamps, and a short non-LLM activity preview. Persona corrects the fifth queue and deliverable-verification claims. See `jarvis/MILESTONE_2B.md`. Live acceptance is pending.

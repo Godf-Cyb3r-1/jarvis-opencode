@@ -20,6 +20,7 @@ export const permissions = [
   { action: "model_list", resource: "*", effect: "allow" },
   { action: "session_create", resource: "*", effect: "allow" },
   { action: "session_status", resource: "*", effect: "allow" },
+  { action: "session_list", resource: "*", effect: "allow" },
   { action: "session_send", resource: "*", effect: "allow" },
   { action: "session_interrupt", resource: "*", effect: "allow" },
   { action: "session_peek", resource: "*", effect: "allow" },
