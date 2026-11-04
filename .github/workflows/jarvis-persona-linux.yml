@@ -27,9 +27,9 @@ jobs:
       - name: Install pinned dependencies on GitHub-hosted Linux
         run: bun install --frozen-lockfile
       - name: Jarvis core regression tests
-        run: bun test packages/core/src/jarvis/
+        run: cd packages/core && bun test src/jarvis/
       - name: Jarvis parallel conversation regression tests
-        run: bun test packages/tui/src/feature-plugins/prompt/jarvis-expression.test.ts packages/tui/src/feature-plugins/prompt/jarvis-side-history.test.ts
+        run: cd packages/tui && bun test src/feature-plugins/prompt/jarvis-expression.test.ts src/feature-plugins/prompt/jarvis-side-history.test.ts
       - name: Typecheck core and TUI
         run: |
           bun run --cwd packages/core typecheck
