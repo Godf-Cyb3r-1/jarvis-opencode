@@ -209,9 +209,22 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         }
       })
 
+      // Match the CLI's Jarvis brain override for fresh TUI sessions.  A saved
+      // model preference can otherwise win over JARVIS_BRAIN_MODEL, making the
+      // CLI and TUI silently use different provider/model IDs.  The override
+      // is opt-in and never selects a different (potentially paid) provider.
+      const jarvisBrainOverride = createMemo(() => {
+        if (agent.current()?.id !== "jarvis") return
+        const value = process.env.JARVIS_BRAIN_MODEL?.trim()
+        if (!value) return
+        const parsed = parse(value)
+        return parsed.providerID && parsed.modelID && isModelValid(parsed) ? parsed : undefined
+      })
+
       const newSessionModel = createMemo(() => {
         const a = agent.current()
         return getFirstValidModel(
+          jarvisBrainOverride,
           () => a && selectionState.newSessionModelByLocationAgent[locationAgentKey(a.id)],
           () => a?.model && { providerID: a.model.providerID, modelID: a.model.id },
           fallbackModel,
