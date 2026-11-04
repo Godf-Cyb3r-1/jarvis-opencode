@@ -22,6 +22,8 @@ jobs:
         run: cd packages/core && bun test src/jarvis/
       - name: OmniVoice tag validator tests
         run: cd packages/tui && bun test src/feature-plugins/prompt/jarvis-expression.test.ts
+      - name: Multi-turn side conversation tests
+        run: cd packages/tui && bun test src/feature-plugins/prompt/jarvis-side-history.test.ts
       - name: Typecheck core
         run: bun run --cwd packages/core typecheck
       - name: Typecheck TUI with parallel talk command
