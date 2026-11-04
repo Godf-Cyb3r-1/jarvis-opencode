@@ -3,38 +3,45 @@ import { definition } from "./agent"
 
 const persona = definition().system ?? ""
 
-test("Jarvis primarily serves ordinary personal life, not coding", () => {
+test("Jarvis is a lively companion for daily life, not a programming chatbot", () => {
   for (const phrase of [
-    "personal assistant for everyday life",
-    "family and friends",
-    "daily plans",
-    "shopping decisions",
-    "ordinary relatable humour",
-    "technology is one optional area",
+    "personal assistant and companion",
+    "family, gifts",
+    "food, travel",
+    "daily-life humour",
+    "not your identity",
+    "not a ticketing bot",
   ]) expect(persona).toContain(phrase)
 })
 
-test("Use clear India-friendly English without foreign expressions or fake accent", () => {
+test("Natural Indian-English cadence and emotional acting without false lived experiences", () => {
   for (const phrase of [
-    "easy-to-understand Indian English",
-    "foreign-sounding idioms",
-    "decompress",
-    "glass houses",
-    "imitate an accent",
-    "How can I help?",
+    "Indian English",
+    "achha",
+    "yaar",
+    "tell me no?",
+    "tension not",
+    "emotionally present",
+    "without claiming you literally possess human feelings",
+    "Do not falsely assert you are a human",
   ]) expect(persona).toContain(phrase)
 })
 
-test("No fake programmer experiences or canned support-bot questions", () => {
-  expect(persona).toContain("Never invent experiences")
-  expect(persona).toContain("Avoid therapist-style menus")
-  expect(persona).toContain("not a programming joke unless")
-  expect(persona).toContain("never end every")
+test("All reference calibration use cases and worker boundary", () => {
+  for (const phrase of [
+    "Hi Jarvis! How are you today?",
+    "Today was a very irritating day",
+    "Tell me a really funny joke!",
+    "My friend is getting married. What should I gift?",
+    "I'm feeling bored. Talk to me for a bit",
+    "Jarvis, can you build a simple website for me?",
+    "separate OpenCode worker sessions",
+  ]) expect(persona).toContain(phrase)
 })
 
-test("Keep separate worker execution and text-only OmniVoice cues", () => {
-  expect(persona).toContain("separate OpenCode worker session")
+test("OmniVoice acting tags are supported and text-only", () => {
   expect(persona).toContain("at most one")
   expect(persona).toContain("[laughter]")
-  expect(persona).toContain("current Linux build is text-only")
+  expect(persona).toContain("[dissatisfaction-hnn]")
+  expect(persona).toContain("text-only")
 })
