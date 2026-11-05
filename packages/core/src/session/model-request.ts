@@ -29,7 +29,7 @@ import type {
 import type { Agent } from "@opencode/schema/agent"
 import type { Model } from "@opencode/schema/model"
 import type { Content } from "@opencode/schema/tool"
-import { Cause, Context, Effect, Layer, Result, Stream } from "effect"
+import { Cause, Context, Effect, Layer, Option, Result, Stream } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
@@ -267,8 +267,10 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const hooks = yield* PluginHooks.Service
     const transport = yield* SessionModelTransport.Service
-    const kv = yield* KV.Service
-    const historyStore = yield* SessionStore.Service
+    // These services are available on the production graph, but isolated
+    // request-shape tests deliberately instantiate the bare layer.
+    const kvOption = yield* Effect.serviceOption(KV.Service)
+    const storeOption = yield* Effect.serviceOption(SessionStore.Service)
     const app = yield* App.Metadata
     const prepare = Effect.fn("SessionModelRequest.prepare")(function* <
       S extends SessionRequest & { tools?: Definitions },
@@ -340,15 +342,17 @@ export const layer = Layer.effect(
       // Model-request memory runs only for the actual conversational Jarvis
       // turn. Read exclusively from pre-hook user messages: tools and plugins
       // may insert synthetic text, which must never become a personal memory.
-      const learnedContext = jarvisRequest && kind === "primary"
+      const learnedContext = jarvisRequest && kind === "primary" && Option.isSome(kvOption)
         ? yield* Effect.gen(function* () {
+            const kv = kvOption.value
+            const historyStore = Option.isSome(storeOption) ? storeOption.value : undefined
             const key = "jarvis:memory:project:" + session.projectID
             const stored = yield* kv.get(key)
             const marker = "jarvis:memory:backfill:v1:" + session.projectID
             const alreadyBackfilled = (yield* kv.get(marker)) === true
             // One-time bounded migration of explicitly stated preferences in
             // older Jarvis conversations. Never scan workers or other agents.
-            const oldTexts = alreadyBackfilled
+            const oldTexts = alreadyBackfilled || !historyStore
               ? []
               : yield* Effect.gen(function* () {
                   const all = yield* historyStore.list({
