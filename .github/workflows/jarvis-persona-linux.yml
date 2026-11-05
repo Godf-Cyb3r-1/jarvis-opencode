@@ -1,9 +1,10 @@
-name: Jarvis integrated Linux x64 build
+name: Jarvis M9 automatic memory Linux x64
 on:
   push:
     branches:
       - fix/jarvis-persona-pipeline-20261104
       - feature/jarvis-m3-m8-integrated
+      - feature/jarvis-m9-auto-memory
       - feature/jarvis-m3-durable-worker-queue
     paths:
       - 'packages/**'
@@ -62,6 +63,6 @@ jobs:
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-integrated-linux-x64
+          name: jarvis-auto-memory-linux-x64
           path: artifact/
           if-no-files-found: error

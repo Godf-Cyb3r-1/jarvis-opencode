@@ -87,6 +87,16 @@ export const Plugin = {
       restoredParents.add(parentID)
     })
 
+    // Restore verified-unstarted queues at plugin activation rather than
+    // requiring Jarvis to issue a control tool after a process restart.
+    // This deliberately does not replay any worker with an execution record.
+    const existingParents = yield* sessions.list({ limit: 100, archived: false })
+      .pipe(Effect.orElseSucceed(() => ({ data: [] as SessionSchema.Info[] })))
+    for (const parent of existingParents.data) {
+      if (parent.agent !== JarvisAgent.ID) continue
+      yield* restoreQueue(parent.id).pipe(Effect.orElseSucceed(() => undefined))
+    }
+
     const authorize = Effect.fn("JarvisControl.authorize")(function* (sessionID: SessionSchema.ID, agent: Agent.ID) {
       if (agent !== JarvisAgent.ID)
         return yield* new ToolFailure({ message: "Jarvis control tools are only available to the Jarvis brain." })
@@ -143,7 +153,7 @@ export const Plugin = {
       editor.add({
         name: "memory_save",
         options: { codemode: false },
-        description: "Save a fact the user explicitly wants Jarvis to remember for this OpenCode project. Available across Jarvis sessions within the project; do not save secrets or invent facts.",
+        description: "Store a clearly stated, lasting user preference, habit, goal, or personal detail for this OpenCode project, even when the user does not say remember. Never guess, infer relationships or store secrets/sensitive attributes. If the user asks to forget a fact, call memory_forget.",
         input: Schema.Struct({ text: Schema.String }),
         output: Schema.Struct({ id: Schema.String, saved: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
@@ -163,7 +173,7 @@ export const Plugin = {
       editor.add({
         name: "memory_find",
         options: { codemode: false },
-        description: "Search saved facts scoped to this OpenCode project across Jarvis sessions. Not shared with other projects.",
+        description: "Look up user preferences and remembered details before answering questions like what color do I like or what did I tell you. Searches facts within this OpenCode project, not other projects.",
         input: Schema.Struct({ query: Schema.String }),
         output: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String, at: Schema.Number })),
         execute: (input, context) => Effect.gen(function* () {

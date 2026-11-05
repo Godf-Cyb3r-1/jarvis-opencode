@@ -32,7 +32,16 @@ export function remember(metadata: Record<string, unknown> | undefined, text: st
 export function forget(metadata: Record<string, unknown> | undefined, id: string) {
   const previous = itemsOf(metadata)
   const items = previous.filter((item) => item.id !== id)
-  return { metadata: { ...(metadata ?? {}), jarvisMemory: { items } }, removed: items.length !== previous.length }
+  // A deleted automatically learned fact must not be re-imported from the
+  // same old transcript on the very next turn.
+  const muted = Array.isArray(metadata?.jarvisAutoMuted)
+    ? (metadata.jarvisAutoMuted as unknown[]).filter((item): item is string => typeof item === "string")
+    : []
+  const tombstones = id.startsWith("auto:") ? [...new Set([...muted, id])].slice(-128) : muted
+  return {
+    metadata: { ...(metadata ?? {}), jarvisMemory: { items }, jarvisAutoMuted: tombstones },
+    removed: items.length !== previous.length,
+  }
 }
 
 export function findMemories(metadata: Record<string, unknown> | undefined, query: string, limit = 10) {
