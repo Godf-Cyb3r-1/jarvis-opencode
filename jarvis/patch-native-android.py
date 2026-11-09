@@ -113,3 +113,20 @@ edit('TermuxInstaller.setupBootstrapIfNeeded(this, () -> { bootstrapped = true; 
         }''')
 p.write_text(s)
 print("Patched native Android UI:",p)
+
+
+# Adapt only the native speech channel; never alter the exact on-screen transcript.
+voice = Path("native-android/opencode-android/app/src/main/java/com/termux/app/JarvisSpeechStyle.java")
+spoken = voice.read_text()
+target = "        String text = normalizeOmniVoiceTags(raw)\n"
+substitute = r'''        String human = raw.replaceAll("(?i)\\[(?:laughter|sigh|confirmation-en|question-(?:oh|en|ah|ei|yi)|surprise-(?:ah|wa|yo|oh)|dissatisfaction-hnn)\\]", " ").trim();
+        if (human.contains("\x60\x60\x60") || human.startsWith("{") ||
+            human.matches("(?s).*(?:Traceback \\(most recent call last\\)|Exception in thread).*"))
+            return "I've put the technical details on screen.";
+        String text = normalizeOmniVoiceTags(raw)
+            .replaceAll("(?i)\\[(?:laughter|sigh|confirmation-en|question-(?:oh|en|ah|ei|yi)|surprise-(?:ah|wa|yo|oh)|dissatisfaction-hnn)\\]", " ")
+'''
+if target not in spoken:
+    raise SystemExit("Android JarvisSpeechStyle.prepare changed; cannot apply voice patch")
+voice.write_text(spoken.replace(target, substitute, 1))
+print("Patched native spoken response rendering:", voice)
