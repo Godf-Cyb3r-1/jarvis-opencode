@@ -25,6 +25,8 @@ jobs:
         run: cd packages/core && bun test src/jarvis/
       - name: Typecheck full core
         run: bun run --cwd packages/core typecheck
+      - name: Typecheck Windows desktop onboarding
+        run: bun run --cwd packages/desktop typecheck
       - name: Compile CLI with enforced routing
         env:
           OPENCODE_VERSION: '2.2.5'
