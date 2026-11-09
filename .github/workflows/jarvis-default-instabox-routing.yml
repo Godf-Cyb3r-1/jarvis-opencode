@@ -1,0 +1,38 @@
+name: Jarvis default Instabox routing acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/jarvis-default-instabox-routing]
+    paths:
+      - 'packages/core/src/jarvis/**'
+      - 'packages/core/src/tool/plugin/shell.ts'
+      - 'packages/core/src/config/plugin/agent.ts'
+      - 'jarvis/persona.md'
+      - '.github/workflows/jarvis-default-instabox-routing.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun install --frozen-lockfile
+      - name: Jarvis routing and controller tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: Typecheck full core
+        run: bun run --cwd packages/core typecheck
+      - name: Compile CLI with enforced routing
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Verify native binary starts
+        run: |
+          binary=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$binary"
+          "$binary" --version
