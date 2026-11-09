@@ -85,6 +85,15 @@ addition = """
                     .setNegativeButton("Cancel", (d,w) -> handler.cancel()).show();
             }
         });
+        if (web.getParent() instanceof android.widget.FrameLayout) {
+            android.widget.Button changeMode = new android.widget.Button(this);
+            changeMode.setText("MODE");
+            changeMode.setContentDescription("Change execution mode");
+            changeMode.setOnClickListener(v -> chooseExecutionMode());
+            android.widget.FrameLayout.LayoutParams position = new android.widget.FrameLayout.LayoutParams(
+                dp(84), dp(48), android.view.Gravity.TOP | android.view.Gravity.END);
+            ((android.widget.FrameLayout) web.getParent()).addView(changeMode, position);
+        }
         web.loadUrl(endpoint);
     }
 
