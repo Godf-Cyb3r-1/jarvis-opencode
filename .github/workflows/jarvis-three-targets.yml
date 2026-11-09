@@ -59,7 +59,7 @@ jobs:
         env:
           OPENCODE_VERSION: '2.2.5'
           OPENCODE_CHANNEL: latest
-          OPENCODE_TARGET: win32-x64
+          OPENCODE_TARGET: windows-x64
         run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
       - name: Package Windows PE executable
         run: |
