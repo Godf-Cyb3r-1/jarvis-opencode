@@ -14,6 +14,7 @@ import { JarvisScheduler } from "./controller.js"
 import { activitySummary, derive } from "./worker-state.js"
 import { findMemories, forget, remember } from "./memory.js"
 import { auditAppend, auditItems, pickAgent } from "./administration.js"
+import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-memory.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -41,6 +42,26 @@ export const Plugin = {
     const agents = yield* Agent.Service
     const models = yield* Model.Service
     const kv = yield* KV.Service
+    const loadMemory = Effect.fn("Jarvis.CloudMemory.load")(function* (projectID: string) {
+      const key = "jarvis:memory:project:" + projectID
+      const local = yield* kv.get(key) as Record<string, unknown> | undefined
+      const pending = (yield* kv.get(pendingKey(projectID))) === true
+      const result = yield* Effect.promise(() => resolveMemory(projectID, local, pending))
+      if (result.error) yield* Effect.logWarning("jarvis.cloud_memory.read_failed", { error: result.error })
+      if (result.synced && result.state) {
+        yield* kv.set(key, result.state as KV.Value)
+        if (pending) yield* kv.set(pendingKey(projectID), false)
+      }
+      return result.state
+    })
+    const saveMemory = Effect.fn("Jarvis.CloudMemory.save")(function* (projectID: string, state: Record<string, unknown>) {
+      yield* kv.set("jarvis:memory:project:" + projectID, state as KV.Value)
+      if (cloudEnabled()) {
+        const synced = yield* Effect.promise(() => mirrorMemory(projectID, state))
+        yield* kv.set(pendingKey(projectID), !synced)
+        if (!synced) yield* Effect.logWarning("jarvis.cloud_memory.write_failed")
+      }
+    })
     // Prevent parallel tool calls from slipping past the four-slot capacity check.
     const gate = yield* Semaphore.make(1)
     // Queue tasks per OpenCode plugin instance; do not start a fifth prompt until a slot releases.
@@ -161,9 +182,9 @@ export const Plugin = {
           if (!input.text.trim()) return yield* new ToolFailure({ message: "Memory cannot be empty." })
           const id = "mem_" + crypto.randomUUID()
           const key = "jarvis:memory:project:" + parent.projectID
-          const previous = yield* kv.get(key)
+          const previous = yield* loadMemory(parent.projectID)
           const metadata = remember(previous as Record<string, unknown> | undefined, input.text, id, Date.now())
-          yield* kv.set(key, metadata as KV.Value)
+          yield* saveMemory(parent.projectID, metadata)
           return { id, saved: true }
         }).pipe(
           Effect.map((output) => ({ output, content: "Remembered in this session: " + output.id })),
@@ -178,7 +199,7 @@ export const Plugin = {
         output: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String, at: Schema.Number })),
         execute: (input, context) => Effect.gen(function* () {
           const parent = yield* authorize(context.sessionID, context.agent)
-          const previous = yield* kv.get("jarvis:memory:project:" + parent.projectID)
+          const previous = yield* loadMemory(parent.projectID)
           return findMemories(previous as Record<string, unknown> | undefined, input.query, 10)
         }).pipe(
           Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.id + ": " + x.text).join("\n") : "No saved memories found for this session." })),
@@ -194,9 +215,9 @@ export const Plugin = {
         execute: (input, context) => Effect.gen(function* () {
           const parent = yield* authorize(context.sessionID, context.agent)
           const key = "jarvis:memory:project:" + parent.projectID
-          const previous = yield* kv.get(key)
+          const previous = yield* loadMemory(parent.projectID)
           const result = forget(previous as Record<string, unknown> | undefined, input.id)
-          if (result.removed) yield* kv.set(key, result.metadata as KV.Value)
+          if (result.removed) yield* saveMemory(parent.projectID, result.metadata)
           return { removed: result.removed }
         }).pipe(
           Effect.map((output) => ({ output, content: output.removed ? "Memory removed." : "Memory ID not found." })),
