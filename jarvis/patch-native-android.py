@@ -90,6 +90,10 @@ addition = """
 
 """
 edit(point,addition + point)
+edit('"Android TTS settings"\\n        };', '"Android TTS settings",\\n            "Execution mode: Local / Instabox"\\n        };')
+edit('case 7:\\n                        try { startActivity(new Intent("com.android.settings.TTS_SETTINGS")); }\\n                        catch (Exception unavailable) { startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)); }\\n                        break;',
+     'case 7:\\n                        try { startActivity(new Intent("com.android.settings.TTS_SETTINGS")); }\\n                        catch (Exception unavailable) { startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)); }\\n                        break;\\n                    case 8: chooseExecutionMode(); break;')
+
 edit('TermuxInstaller.setupBootstrapIfNeeded(this, () -> { bootstrapped = true; begin(); offerBackgroundAccess(); });',
      '''if ("cloud".equals(OpenCodeWebService.preferences(this).getString("jarvis_execution_mode", "local"))) {
             String endpoint = OpenCodeWebService.preferences(this).getString("jarvis_cloud_url", "");
