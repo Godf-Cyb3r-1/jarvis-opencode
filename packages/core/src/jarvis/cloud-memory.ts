@@ -2,7 +2,6 @@
  * while an unsynced local write exists; never discard data after network failure.
  * Upstash Redis REST uses an authenticated JSON command protocol over HTTPS.
  */
-import type { KV } from "../kv.js"
 
 export type CloudMemory = Record<string, unknown>
 export const cloudEnabled = () => !!(process.env.JARVIS_UPSTASH_REDIS_REST_URL && process.env.JARVIS_UPSTASH_REDIS_REST_TOKEN)
