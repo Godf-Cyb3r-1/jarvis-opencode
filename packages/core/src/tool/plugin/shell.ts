@@ -17,6 +17,7 @@ import { Shell } from "../../shell.js"
 import { ShellParse } from "../../shell/parse.js"
 import { ShellSelect } from "../../shell/select.js"
 import { ShellResult } from "../../shell/result.js"
+import { classifyHostCommand, shouldGuardLocal } from "../../jarvis/execution-routing.js"
 
 export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
@@ -112,6 +113,22 @@ export const Plugin = {
     const permission = yield* Permission.Service
 
     const prepare = Effect.fn("ShellTool.prepare")(function* (invocation: ShellCreateBefore, context: Tool.Context) {
+      // Enforced on the actual host shell path for ALL agents, not only
+      // model instructions. Local inspection remains available; installing
+      // or building must use the explicit Instabox remote execution tool.
+      if (shouldGuardLocal()) {
+        const route = classifyHostCommand(invocation.command)
+        if (route === "instabox-required")
+          return yield* Effect.fail(new Error(
+            "Host execution blocked by Jarvis policy. Use instabox_status, then instabox_exec in /data/workspace. " +
+            "If Instabox is not configured, ask the user to install its CLI and sign in first. No local fallback.",
+          ))
+        if (route === "approval-required")
+          return yield* Effect.fail(new Error(
+            "This host command is not on the read-only local allowlist. " +
+            "Use Instabox for tools/builds, or perform local non-shell tasks through dedicated UI/file tools.",
+          ))
+      }
       const target = yield* access.resolve({ path: invocation.cwd, kind: "directory" })
       invocation.cwd = target.absolute
       const timeout = invocation.timeout
