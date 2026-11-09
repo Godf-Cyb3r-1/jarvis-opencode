@@ -47,7 +47,7 @@ addition = """
                 String endpoint = input.getText().toString().trim();
                 android.net.Uri uri = android.net.Uri.parse(endpoint);
                 if (!"https".equals(uri.getScheme()) || uri.getHost() == null ||
-                    uri.getUserInfo() != null || uri.getFragment() != null ||
+                    uri.getEncodedAuthority().contains("@") || uri.getFragment() != null ||
                     uri.getHost().equals("localhost") || uri.getHost().equals("127.0.0.1")) {
                     android.widget.Toast.makeText(this, "A valid remote HTTPS URL is required",
                         android.widget.Toast.LENGTH_LONG).show();
