@@ -1,7 +1,7 @@
 /**
- * Final text-only OmniVoice expression validation for primary Jarvis replies.
- * This never changes tool arguments, user messages, reasoning, code blocks, or
- * worker replies. Normalized text is committed in the final Text.Ended event.
+ * Canonical Jarvis speech output policy. Applied to completed assistant text,
+ * never to tool arguments, worker messages, or reasoning. Technical content
+ * is protected from transformations that would make commands unusable.
  */
 export const OMNIVOICE_TAGS = [
   "laughter", "sigh", "confirmation-en", "question-oh", "question-en",
@@ -10,7 +10,44 @@ export const OMNIVOICE_TAGS = [
 ] as const
 
 const allowed = new Set<string>(OMNIVOICE_TAGS)
-const candidate = /\[([a-z][a-z-]{1,40})\](?!\()/g
+const tagPattern = /\[([a-z][a-z-]{1,40})\](?!\()/gi
+const clock = /^\s*\[(?:0?[1-9]|1[0-2]):[0-5]\d\s?[AP]M\]\s*/i
+const numbers = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"]
+
+/** Conservative: a false positive keeps formatting, while a false negative
+ * can damage a technical instruction. This classification only determines
+ * whether aggressive speech formatting is safe. */
+export function isConversationalText(source: string): boolean {
+  return !/(```|`|https?:\/\/|\bwww\.|(?:^|\s)(?:\/[^\s]+){2}|\b(?:[\w.-]+\/){2}[\w.-]+|\$\s*\w|\b(?:sudo|curl|npm|bun|git|python3)\s+[-\w])/im.test(source)
+}
+
+function spokenNumber(value: string): string {
+  const n = Number(value)
+  if (!Number.isSafeInteger(n) || n < 0 || n > 20) return value
+  return numbers[n] ?? value
+}
+
+/** Visible conversational prose only; never call this on code or tool output. */
+function cleanSpeech(source: string): string {
+  return source
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+[.)]\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_\n]+)_/g, "$1")
+    .replace(/\(([^()]*)\)/g, "$1")
+    .replace(/[—–]/g, ",")
+    .replace(/;/g, ".")
+    .replace(/&/g, " and ")
+    .replace(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/g, (_m, a: string, b: string) => spokenNumber(a) + " to " + spokenNumber(b))
+    .replace(/\b\d{1,2}\b/g, (n) => spokenNumber(n))
+    .replace(/\s*\n+\s*/g, ". ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.!?])/g, "$1")
+    .trim()
+}
 
 export function normalizeJarvisText(
   source: string,
@@ -19,33 +56,32 @@ export function normalizeJarvisText(
   let used = options.alreadyUsed ?? false
   let accepted: string | undefined
   const removed: string[] = []
-  // Keep fenced/inline Markdown code, ordinary Markdown links, and terminal
-  // snippets untouched. No tool request or worker output passes this function.
-  const sections = source.split(/(```[\s\S]*?```|`[^`\n]*`)/g)
-  const text = sections.map((part) => {
-    if (part.startsWith("`")) return part
-    // Timestamp-shaped square brackets are not OmniVoice expressions.
-    // Only remove them at the start of a prose fragment, never code or links.
-    const timePrefix = part.match(/^\s*\[(?:0?[1-9]|1[0-2]):[0-5]\d\s?[AP]M\]\s*/i)
-    if (timePrefix) removed.push(timePrefix[0].trim())
-    const withoutClock = part.replace(/^\s*\[(?:0?[1-9]|1[0-2]):[0-5]\d\s?[AP]M\]\s*/i, "")
-    const spoken = withoutClock.replace(/ *\u2014 */g, ", ")
-      .replace(/sharp and ready(?: to help)?/gi, "doing good")
-      .replace(/what(?:'|’)s on your plate/gi, "what's going on")
-      .replace(/take something off your plate/gi, "help with something")
-      .replace(/sorry to hear that/gi, "Arre, that sounds upsetting")
-      .replace(/how can i assist you today\??/gi, "Tell me what's happening")
-      .replace(/systems are quiet/gi, "things are calm")
-      .replace(/chips away at you/gi, "gets tiring")
-    return spoken.replace(candidate, (match: string, name: string) => {
-      if (allowed.has(name) && !used) {
-        used = true
-        accepted = match
-        return match
+  const technical = !isConversationalText(source)
+  // Preserve fenced and inline code exactly. Ordinary markdown links are
+  // preserved as technical content too. Only a leading cue can survive.
+  const fragments = source.split(/(```[\s\S]*?```|`[^`\n]*`|\[[^\]\n]+\]\(https?:\/\/[^)]+\))/g)
+  const normalized = fragments.map((part) => {
+    if (part.startsWith("`") || /^\[[^\]\n]+\]\(https?:\/\//.test(part)) return part
+    const prefix = part.match(clock)
+    if (prefix) removed.push(prefix[0].trim())
+    let prose = part.replace(clock, "")
+    prose = prose.replace(tagPattern, (match: string, name: string) => {
+      const lower = name.toLowerCase()
+      if (!allowed.has(lower) || used) {
+        removed.push(match)
+        return ""
       }
-      removed.push(match)
-      return ""
+      // Speech cues are only valid at the start of the reply, not mid-sentence.
+      if (source.slice(0, source.indexOf(match)).replace(clock, "").trim() !== "") {
+        removed.push(match)
+        return ""
+      }
+      used = true
+      accepted = "[" + lower + "]"
+      return accepted
     })
-  }).join("").replace(/ {2,}/g, " ")
-  return { text, ...(accepted ? { accepted } : {}), removed }
+    if (!technical) prose = cleanSpeech(prose)
+    return prose
+  }).join("")
+  return { text: technical ? normalized.trim() : normalized.replace(/\s{2,}/g, " ").trim(), ...(accepted ? { accepted } : {}), removed }
 }

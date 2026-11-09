@@ -13,6 +13,9 @@ import { useToast } from "../../ui/toast"
 import { getScrollAcceleration } from "../../util/scroll"
 import { normalizeExpressionTags } from "./jarvis-expression"
 import { JarvisSideHistory } from "./jarvis-side-history"
+import { useTuiPaths } from "../../context/runtime"
+import { readJson, writeJsonAtomic } from "../../util/persistence"
+import path from "path"
 
 // session.generate exposes the session's tools but runs no tool loop, so a
 // tool call would surface as an empty answer.
@@ -27,6 +30,41 @@ export default Plugin.define({
   setup(context) {
     const [pending, setPending] = createSignal(0)
     const sideHistory = new JarvisSideHistory(6)
+
+    // Native OpenCode execution events keep Jarvis responsive while workers
+    // run in their own sessions. Durable per-TUI dedup prevents repeat alerts.
+    const [notifications, saveNotifications] = context.storage.store("jarvis-worker-events-v1", {
+      initial: { keys: [] as string[] },
+    })
+    const notifyWorker = (kind: "completed" | "failed" | "interrupted", sessionID: string) => {
+      void (async () => {
+        await context.data.session.sync(sessionID)
+        const info = context.data.session.get(sessionID)
+        const meta = info?.metadata?.jarvis as { role?: string } | undefined
+        if (meta?.role !== "worker") return
+        const key = sessionID + ":" + kind + ":" + (info?.time?.idle ?? info?.time?.updated ?? "unknown")
+        if (notifications.keys.includes(key)) return
+        await saveNotifications((draft) => { draft.keys = [...draft.keys.slice(-199), key] })
+        const message = (info?.title || sessionID) + " " + kind
+        context.ui.toast.show({
+          title: "Jarvis worker",
+          message,
+          sessionID,
+          variant: kind === "completed" ? "success" : kind === "failed" ? "error" : "warning",
+        })
+        void context.attention.notify({
+          title: "Jarvis worker",
+          message,
+          notification: true,
+          sound: { name: kind === "completed" ? "subagent_done" : "error" },
+        })
+      })().catch((error) => console.warn("[jarvis] worker notification failed", error))
+    }
+    const events = [
+      context.data.on("session.execution.succeeded", (event) => notifyWorker("completed", event.data.sessionID)),
+      context.data.on("session.execution.failed", (event) => notifyWorker("failed", event.data.sessionID)),
+      context.data.on("session.execution.interrupted", (event) => notifyWorker("interrupted", event.data.sessionID)),
+    ]
 
     context.ui.slot({
       append: "prompt.footer.status",
@@ -48,6 +86,8 @@ export default Plugin.define({
         const toast = useToast()
         // Dialogs render beside PluginProvider, so Answer cannot call usePlugin().
         const plugins = usePlugin()
+        const file = path.join(useTuiPaths().state, "jarvis-side-history.json")
+        const loaded = readJson<unknown>(file).then((data) => sideHistory.restore(data)).catch(() => undefined)
         context.keymap.layer(() => ({
           mode: "global",
           commands: [
@@ -96,28 +136,28 @@ export default Plugin.define({
                 const question =
                   input?.trim() || (await context.ui.dialog.prompt({ title: "Talk to Jarvis", placeholder: "What's on your mind?" }))
                 if (!question) return
+                await loaded
                 setPending((count) => count + 1)
+                // A short conversation-only reminder; primary Jarvis sessions
+                // use the single canonical provider-bound persona in core.
                 const talkInstructions = [
-                  "You are Jarvis, a charismatic, attentive personal companion for everyday Indian life, not an IT chatbot or helpdesk.",
-                  "Use clear, contemporary Indian English and naturally varied rhythm; achha, yaar, actually, only, sorted or full on can fit occasionally, not mechanically.",
-                  "Act with playful, warm emotion in the conversation without inventing a human past or claiming literally human feelings.",
-                  "React to real-life topics first: friends, marriage, jokes, gifts, feeling bored, good news, bad days, food and travel.",
-                  "For a joke, tell one about daily life, never programming unless explicitly requested.",
-                  "Avoid foreign idioms, service menus, repeated offers and automatically ending every response with a question.",
-                  "Never use em dashes for casual spoken clauses or corporate phrases such as sharp and ready to help, what is on your plate, sorry to hear that, or how can I assist you.",
-                  "For funny requests, tell a lively Indian everyday-life joke, not anti-gravity, scarecrow or atom puns.",
-                  "React to the emotion first. Use relatable warmth and curiosity, no two-choice service menu.",
-                  "If an OmniVoice cue fits, place it at the very beginning, enclosed in square brackets. Use only one of the 13 allowed tags.",
-                  "This parallel /talk lane is for conversation only: no tools, no task claims, no worker interruption.",
-                  "For expressive casual replies choose up to ONE fitting OmniVoice cue such as [laughter], [sigh], [confirmation-en], [surprise-wa] or [question-ei]. No cue is required for technical or serious replies.",
-                  "Allowed cues only: [laughter], [sigh], [confirmation-en], [question-oh], [question-en], [question-ah], [question-ei], [question-yi], [surprise-ah], [surprise-wa], [surprise-yo], [surprise-oh], [dissatisfaction-hnn].",
-                  "Keep an ordinary reply friendly and concise unless the user requests more.",
+                  "JARVIS_PERSONA_VERSION_UNIVERSAL_V2.",
+                  "You are Jarvis, a warm, witty Tamil/South Indian personal assistant across every life and work topic.",
+                  "React naturally, give a grounded thought or answer, then ask one open question only when helpful.",
+                  "Keep everyday replies short and speakable; no binary menus, literary metaphors or service scripts.",
+                  "You may use exactly one appropriate OmniVoice cue at the beginning, never elsewhere.",
+                  "Use conversational Tamil-English or South Indian English lightly and naturally; do not use Hindi fillers such as achha, arre, yaar, bhai or bhaiya. Avoid unnecessary technical jargon.",
+                  "Never invent access, completed tasks, human biography or personal experiences.",
+                  "This independent side conversation has no ability to act; explain limitations simply.",
                 ].join(" ")
                 await context.client.session
                   .generate({ sessionID: route.sessionID, prompt: sideHistory.prompt(route.sessionID, talkInstructions, question) })
                   .then((result) => {
                     const reply = normalizeExpressionTags(result.text.trim())
                     sideHistory.remember(route.sessionID, question, reply.text)
+                    void writeJsonAtomic(file, sideHistory.snapshot()).catch((error) => {
+                      console.warn("[jarvis] Could not persist side conversation", error)
+                    })
                     if (reply.rejected.length) {
                       console.warn("[jarvis] Unsupported or repeated expression markers suppressed", reply.rejected)
                     }
@@ -135,6 +175,7 @@ export default Plugin.define({
         return null
       },
     })
+    return () => { for (const dispose of events) dispose() }
   },
 })
 

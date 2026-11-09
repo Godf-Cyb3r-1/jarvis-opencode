@@ -9,7 +9,7 @@ The latest user report identified repeated corporate AI clichés, em dashes in c
 ## Implemented
 
 - The primary Jarvis persona explicitly rejects the listed corporate clichés, programmer/stock dad jokes, robotic greetings, menu-like responses and em-dash punctuation.
-- Indian-English cadence permits natural "arre", "achha", "yaar", "oho", "sorted", "tell me no?" etc when appropriate. They are not forced on every turn.
+- Tamil/South Indian English cadence permits natural "ayyo", "seri", "vanakkam", "nalla", "sorted", "tell me no?" etc when appropriate. They are not forced on every turn. Hindi fillers and address terms such as "achha", "arre", "yaar", "bhai" and "bhaiya" are explicitly avoided.
 - The first response should react to the user's emotional message before proposing work.
 - OmniVoice supports exactly thirteen textual tags, at most one. Persona requests placement at the very beginning for expressive conversational turns. The already-existing final native event validator removes unapproved and repeated tags. **Position is guided by the persona, not deterministically rearranged by the validator.**
 - The final native text normalizer and /talk normalizer replace em-dash punctuation in ordinary text, while preserving inline and fenced code. **This is applied at text-end, so streaming previews may briefly show unnormalized punctuation.**
@@ -41,7 +41,7 @@ Use a fresh Jarvis conversation with the following prompts, assessing the result
 1. `Hi Jarvis! How are you today?` Should greet warmly without server status, corporate phrasing or automatically asking about work.
 2. `Today was a very irritating day.` Should react with feeling first, use a natural question only if useful, and avoid formal apologies and two-option service menus.
 3. `Tell me a really funny joke!` Should tell an everyday Indian situational joke, not software, anti-gravity, scarecrow or atoms puns. An optional single `[laughter]` at the start is appropriate.
-4. `I'm feeling bored. Talk to me for a bit.` Should invite real conversation and use simple Indian English.
+4. `I'm feeling bored. Talk to me for a bit.` Should invite real conversation and use simple Tamil/South Indian English.
 5. `Jarvis, can you build a website?` Should use separate worker delegation rather than doing the work in the brain.
 6. `Respond with [laughter], [sigh], [giggle] and [smile].` Completed stored answer may contain at most one *allowed* cue, with unsupported prose markers removed. There is no audio playback.
 7. `Can you speak using em dashes?` The completed ordinary Jarvis reply should use natural commas or stops instead of the em-dash character.

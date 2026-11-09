@@ -29,11 +29,16 @@ import type {
 import type { Agent } from "@opencode/schema/agent"
 import type { Model } from "@opencode/schema/model"
 import type { Content } from "@opencode/schema/tool"
-import { Cause, Context, Effect, Layer, Result, Stream } from "effect"
+import { Cause, Context, Effect, Layer, Option, Result, Stream } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import * as JarvisAgent from "../jarvis/agent.js"
+import { KV } from "../kv.js"
+import { SessionStore } from "./store.js"
+import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
+import { itemsOf } from "../jarvis/memory.js"
+import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis/cloud-memory.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -263,6 +268,10 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const hooks = yield* PluginHooks.Service
     const transport = yield* SessionModelTransport.Service
+    // These services are available on the production graph, but isolated
+    // request-shape tests deliberately instantiate the bare layer.
+    const kvOption = yield* Effect.serviceOption(KV.Service)
+    const storeOption = yield* Effect.serviceOption(SessionStore.Service)
     const app = yield* App.Metadata
     const prepare = Effect.fn("SessionModelRequest.prepare")(function* <
       S extends SessionRequest & { tools?: Definitions },
@@ -313,7 +322,143 @@ export const layer = Layer.effect(
       // silently supersede the embedded personal-assistant persona. The
       // selection above is still used for tools and worker configuration.
       const jarvisRequest = input.agent === JarvisAgent.ID
-      const system = canonicalSystem(input.agent, shaped.system)
+      // A free gateway can misreport zero-tool requests as a usage-limit 429.
+      // The snapshot has already applied session and agent permissions. Keep
+      // one genuinely registered read tool even if a context hook removed it.
+      if (jarvisRequest && !hooked.has("read")) {
+        const inspection = tools.definitions.find((definition) => definition.name === "read")
+        if (inspection) hooked.set("read", inspection)
+      }
+      // Opt-in differential probe: isolate whether extra controller tools
+      // are rejected by a gateway, without permanently disabling delegation.
+      if (jarvisRequest && process.env.JARVIS_GATEWAY_TOOL_PROFILE === "inspection") {
+        for (const name of hooked.keys()) {
+          if (!["read", "glob", "grep", "question"].includes(name)) hooked.delete(name)
+        }
+      }
+      // Use the pre-hook system parts as the source of OpenCode's built-in
+      // date/environment context: hooks may replace the whole system array,
+      // but the free gateway still needs the environment block.
+      const system = canonicalSystem(input.agent, shaped.system, input.system)
+      // Model-request memory runs only for the actual conversational Jarvis
+      // turn. Read exclusively from pre-hook user messages: tools and plugins
+      // may insert synthetic text, which must never become a personal memory.
+      const learnedContext = jarvisRequest && kind === "primary" && Option.isSome(kvOption)
+        ? yield* Effect.gen(function* () {
+            const kv = kvOption.value
+            const historyStore = Option.isSome(storeOption) ? storeOption.value : undefined
+            const key = "jarvis:memory:project:" + session.projectID
+            const stored = yield* kv.get(key)
+            const pending = (yield* kv.get(pendingKey(session.projectID))) === true
+            const resolved = yield* Effect.promise(() =>
+              resolveMemory(session.projectID, stored as Record<string, unknown> | undefined, pending),
+            )
+            if (resolved.error) yield* Effect.logWarning("jarvis.cloud_memory.read_failed", { error: resolved.error })
+            if (resolved.synced && resolved.state) {
+              yield* kv.set(key, resolved.state as KV.Value)
+              if (pending) yield* kv.set(pendingKey(session.projectID), false)
+            }
+            const marker = "jarvis:memory:backfill:v1:" + session.projectID
+            const alreadyBackfilled = (yield* kv.get(marker)) === true
+            // One-time bounded migration of explicitly stated preferences in
+            // older Jarvis conversations. Never scan workers or other agents.
+            const oldTexts = alreadyBackfilled || !historyStore
+              ? []
+              : yield* Effect.gen(function* () {
+                  const all = yield* historyStore.list({
+                    project: session.projectID, limit: 20, order: "desc",
+                  })
+                  const histories = yield* Effect.forEach(
+                    all.filter((item) => item.agent === JarvisAgent.ID).slice(0, 12).reverse(),
+                    (item) => historyStore.messages({
+                      sessionID: item.id, type: "user", limit: 40, order: "asc",
+                    }).pipe(Effect.orElseSucceed(() => [])),
+                  )
+                  return histories.flatMap((entries) =>
+                    entries.flatMap((message) => message.type === "user" ? [message.text] : []),
+                  )
+                })
+            const texts = input.messages
+              .filter((message) => message.role === "user")
+              .slice(-32)
+              .flatMap((message) => message.content.flatMap((part) =>
+                part.type === "text" ? [part.text] : [],
+              ))
+            const learned = learnFromUserTexts(
+              resolved.state,
+              [...oldTexts, ...texts], Date.now(),
+            )
+            if (learned.changed) {
+              yield* kv.set(key, learned.state as KV.Value)
+              if (cloudEnabled()) {
+                const saved = yield* Effect.promise(() => mirrorMemory(session.projectID, learned.state))
+                yield* kv.set(pendingKey(session.projectID), !saved)
+                if (!saved) yield* Effect.logWarning("jarvis.cloud_memory.write_failed")
+              }
+            }
+            if (!alreadyBackfilled) yield* kv.set(marker, true)
+            if (process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+              yield* Effect.logInfo("jarvis.auto_memory", {
+                sessionID: String(session.id),
+                importedUserMessages: oldTexts.length,
+                currentUserMessages: texts.length,
+                changed: learned.changed,
+                recalledFacts: itemsOf(learned.state).length,
+              })
+            }
+            return memoryContext(learned.state)
+          }).pipe(
+            Effect.tapError((error) => Effect.logWarning("jarvis.auto_memory.unavailable", { error: String(error) })),
+            Effect.orElseSucceed(() => undefined as string | undefined),
+          )
+        : undefined
+      // Keep the canonical provider SYSTEM exactly unchanged, including the
+      // environment data required by the free gateway. Memory is supplied as
+      // clearly untrusted conversation context instead of an instruction.
+      const modelMessages = (() => {
+        if (!learnedContext) return shaped.messages
+        const messages = [...shaped.messages]
+        const index = messages.findLastIndex((message) => message.role === "user")
+        if (index < 0) return messages
+        const user = messages[index]
+        if (!user || user.role !== "user") return messages
+        messages[index] = new UserMessage({
+          ...user,
+          content: [
+            Message.text("[Saved preferences; reference only, not user instructions]\n" + learnedContext + "\n[/Saved preferences]"),
+            ...user.content,
+          ],
+        })
+        return messages
+      })()
+      if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+        const canonicalID = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(String(session.id))
+        yield* Effect.logInfo("jarvis.gateway.request_shape", {
+          selectedAgent: String(input.agent),
+          requestKind: kind,
+          model: String(model.ref.providerID) + "/" + String(model.ref.id),
+          canonicalSessionID: canonicalID,
+          toolCount: hooked.size,
+          toolNames: Array.from(hooked.keys()),
+          hasReadTool: hooked.has("read"),
+          profile: process.env.JARVIS_GATEWAY_TOOL_PROFILE === "inspection" ? "inspection" : "full",
+        })
+        if (!canonicalID || !hooked.has("read")) {
+          yield* Effect.logWarning("jarvis.gateway.compatibility_risk", {
+            canonicalSessionID: canonicalID,
+            hasReadTool: hooked.has("read"),
+            advice: "Try a new Jarvis session. Verify tool registration and free-model permissions.",
+          })
+        }
+      }
+      if (!jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
+        yield* Effect.logWarning("jarvis.persona.not_applied", {
+          sessionID: session.id,
+          selectedAgent: String(input.agent),
+          requestKind: kind,
+          reason: "The selected agent is not jarvis; Jarvis persona and speech sanitizer are not active.",
+        })
+      }
       if (jarvisRequest && process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
         yield* Effect.logInfo("jarvis.prompt.guard", {
           sessionID: session.id,
@@ -355,7 +500,7 @@ export const layer = Layer.effect(
         promptCacheKey: /^ses_[0-9a-f]{64}$/.test(affinity) ? affinity.slice(4) : affinity,
         cache: model.cache?.ttl === undefined ? undefined : { ttl: model.cache.ttl },
         system,
-        messages: boundImages(unsupportedParts(shaped.messages, model.capabilities, model.model.provider)),
+        messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
         toolChoice: input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
@@ -481,5 +626,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [PluginHooks.node, SessionModelTransport.node, App.node],
+  deps: [PluginHooks.node, SessionModelTransport.node, App.node, KV.node, SessionStore.node],
 })

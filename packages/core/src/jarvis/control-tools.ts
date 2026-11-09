@@ -5,12 +5,16 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import { DateTime, Effect, Schema, Semaphore } from "effect"
 import { Agent } from "../agent.js"
 import { Model } from "../model.js"
+import { KV } from "../kv.js"
 import { Model as ModelSchema } from "@opencode/schema/model"
 import { Session } from "../session.js"
 import { SessionSchema } from "../session/schema.js"
 import * as JarvisAgent from "./agent.js"
 import { JarvisScheduler } from "./controller.js"
 import { activitySummary, derive } from "./worker-state.js"
+import { findMemories, forget, remember } from "./memory.js"
+import { auditAppend, auditItems, pickAgent } from "./administration.js"
+import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-memory.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -18,12 +22,46 @@ export const isWorkerOf = (session: SessionSchema.Info, parentID: SessionSchema.
   session.parentID === parentID &&
   (session.metadata?.jarvis as { role?: string } | undefined)?.role === "worker"
 
+/** Only restore instructions that are proven never to have executed.
+ * A previously started worker must be reconciled, not blindly replayed.
+ */
+export const recoverableQueuedInstruction = (session: SessionSchema.Info): string | undefined => {
+  const jarvis = session.metadata?.jarvis as
+    | { role?: string; queue?: { status?: string; instruction?: string } }
+    | undefined
+  if (jarvis?.role !== "worker" || jarvis.queue?.status !== "queued") return
+  if (session.time.busy || session.time.idle || session.outcome) return
+  return jarvis.queue.instruction?.trim() || undefined
+}
+
+
 export const Plugin = {
   id: "opencode.jarvis.control",
   effect: Effect.fn("JarvisControlTools.Plugin")(function* (ctx: Context) {
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
     const models = yield* Model.Service
+    const kv = yield* KV.Service
+    const loadMemory = Effect.fn("Jarvis.CloudMemory.load")(function* (projectID: string) {
+      const key = "jarvis:memory:project:" + projectID
+      const local = (yield* kv.get(key)) as Record<string, unknown> | undefined
+      const pending = (yield* kv.get(pendingKey(projectID))) === true
+      const result = yield* Effect.promise(() => resolveMemory(projectID, local, pending))
+      if (result.error) yield* Effect.logWarning("jarvis.cloud_memory.read_failed", { error: result.error })
+      if (result.synced && result.state) {
+        yield* kv.set(key, result.state as KV.Value)
+        if (pending) yield* kv.set(pendingKey(projectID), false)
+      }
+      return result.state
+    })
+    const saveMemory = Effect.fn("Jarvis.CloudMemory.save")(function* (projectID: string, state: Record<string, unknown>) {
+      yield* kv.set("jarvis:memory:project:" + projectID, state as KV.Value)
+      if (cloudEnabled()) {
+        const synced = yield* Effect.promise(() => mirrorMemory(projectID, state))
+        yield* kv.set(pendingKey(projectID), !synced)
+        if (!synced) yield* Effect.logWarning("jarvis.cloud_memory.write_failed")
+      }
+    })
     // Prevent parallel tool calls from slipping past the four-slot capacity check.
     const gate = yield* Semaphore.make(1)
     // Queue tasks per OpenCode plugin instance; do not start a fifth prompt until a slot releases.
@@ -34,6 +72,14 @@ export const Plugin = {
         const abort = () => { void Effect.runPromise(sessions.interrupt(task.input.sessionID)).catch(() => {}) }
         signal.addEventListener("abort", abort, { once: true })
         try {
+          // Persist RUNNING before admitting the first prompt. After a crash
+          // the recovery path will never replay a possibly side-effectful run.
+          const owned = await Effect.runPromise(sessions.get(task.input.sessionID))
+          const metadata = {
+            ...(owned.metadata ?? {}),
+            jarvis: { role: "worker", queue: { status: "running", instruction: task.input.instruction } },
+          }
+          await Effect.runPromise(sessions.setMetadata({ sessionID: task.input.sessionID, metadata }))
           await Effect.runPromise(sessions.prompt({ sessionID: task.input.sessionID, text: task.input.instruction }))
           await Effect.runPromise(sessions.wait(task.input.sessionID))
           const finished = await Effect.runPromise(sessions.get(task.input.sessionID))
@@ -44,6 +90,33 @@ export const Plugin = {
         }
       },
     )
+
+    const restoredParents = new Set<string>()
+    const restoreQueue = Effect.fn("JarvisControl.restoreQueue")(function* (parentID: SessionSchema.ID) {
+      if (restoredParents.has(parentID)) return
+      const children = yield* sessions.list({ parentID, limit: 100 })
+      const active = yield* sessions.active
+      const replay = children.data
+        .filter((info) => isWorkerOf(info, parentID) && !active.has(info.id))
+        .flatMap((info) => {
+          const instruction = recoverableQueuedInstruction(info)
+          return instruction ? [{ id: info.id, input: { sessionID: info.id, instruction } }] : []
+        })
+        // Created order is the original FIFO order for queued child sessions.
+        .reverse()
+      scheduler.restoreQueued(replay)
+      restoredParents.add(parentID)
+    })
+
+    // Restore verified-unstarted queues at plugin activation rather than
+    // requiring Jarvis to issue a control tool after a process restart.
+    // This deliberately does not replay any worker with an execution record.
+    const existingParents = yield* sessions.list({ limit: 100, archived: false })
+      .pipe(Effect.orElseSucceed(() => ({ data: [] as SessionSchema.Info[] })))
+    for (const parent of existingParents.data) {
+      if (parent.agent !== JarvisAgent.ID) continue
+      yield* restoreQueue(parent.id).pipe(Effect.orElseSucceed(() => undefined))
+    }
 
     const authorize = Effect.fn("JarvisControl.authorize")(function* (sessionID: SessionSchema.ID, agent: Agent.ID) {
       if (agent !== JarvisAgent.ID)
@@ -64,6 +137,118 @@ export const Plugin = {
     })
 
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "agent_pick",
+        options: { codemode: false },
+        description: "Recommend an installed worker agent based on the actual task, without creating an agent or changing any permissions.",
+        input: Schema.Struct({ task: Schema.String }),
+        output: Schema.Struct({ agent: Schema.String, reason: Schema.String }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          const available = (yield* agents.list())
+            .filter((agent) => agent.id !== JarvisAgent.ID && !agent.hidden)
+            .map((agent) => ({ id: String(agent.id), description: agent.description }))
+          const chosen = pickAgent(input.task, available)
+          if (!chosen) return yield* new ToolFailure({ message: "No usable worker agents are installed." })
+          return { agent: chosen.id, reason: chosen.description ?? "Available registered worker agent" }
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.agent + ": " + output.reason })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Agent recommendation failed", error })),
+        ),
+      })
+      editor.add({
+        name: "worker_audit",
+        options: { codemode: false },
+        description: "Inspect a worker's durable action audit entries, including task creation and model/agent switches. Limited to the current Jarvis session's owned worker.",
+        input: Schema.Struct({ sessionID: SessionSchema.ID }),
+        output: Schema.Array(Schema.Struct({ action: Schema.String, detail: Schema.String, at: Schema.Number })),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          const current = yield* worker(context.sessionID, input.sessionID)
+          return auditItems(current.metadata)
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.action + ": " + x.detail).join("\n") : "No audit entries." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to read worker audit", error })),
+        ),
+      })
+      editor.add({
+        name: "memory_save",
+        options: { codemode: false },
+        description: "Store a clearly stated, lasting user preference, habit, goal, or personal detail for this OpenCode project, even when the user does not say remember. Never guess, infer relationships or store secrets/sensitive attributes. If the user asks to forget a fact, call memory_forget.",
+        input: Schema.Struct({ text: Schema.String }),
+        output: Schema.Struct({ id: Schema.String, saved: Schema.Boolean }),
+        execute: (input, context) => Effect.gen(function* () {
+          const parent = yield* authorize(context.sessionID, context.agent)
+          if (!input.text.trim()) return yield* new ToolFailure({ message: "Memory cannot be empty." })
+          const id = "mem_" + crypto.randomUUID()
+          const previous = yield* loadMemory(parent.projectID)
+          const metadata = remember(previous as Record<string, unknown> | undefined, input.text, id, Date.now())
+          yield* saveMemory(parent.projectID, metadata)
+          return { id, saved: true }
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Remembered in this session: " + output.id })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to store memory", error })),
+        ),
+      })
+      editor.add({
+        name: "memory_find",
+        options: { codemode: false },
+        description: "Look up user preferences and remembered details before answering questions like what color do I like or what did I tell you. Searches facts within this OpenCode project, not other projects.",
+        input: Schema.Struct({ query: Schema.String }),
+        output: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String, at: Schema.Number })),
+        execute: (input, context) => Effect.gen(function* () {
+          const parent = yield* authorize(context.sessionID, context.agent)
+          const previous = yield* loadMemory(parent.projectID)
+          return findMemories(previous as Record<string, unknown> | undefined, input.query, 10)
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.id + ": " + x.text).join("\n") : "No saved memories found for this session." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to search memory", error })),
+        ),
+      })
+      editor.add({
+        name: "memory_forget",
+        options: { codemode: false },
+        description: "Delete a specific project-scoped saved memory by its exact ID, when the user asks.",
+        input: Schema.Struct({ id: Schema.String }),
+        output: Schema.Struct({ removed: Schema.Boolean }),
+        execute: (input, context) => Effect.gen(function* () {
+          const parent = yield* authorize(context.sessionID, context.agent)
+          const previous = yield* loadMemory(parent.projectID)
+          const result = forget(previous as Record<string, unknown> | undefined, input.id)
+          if (result.removed) yield* saveMemory(parent.projectID, result.metadata)
+          return { removed: result.removed }
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.removed ? "Memory removed." : "Memory ID not found." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to delete memory", error })),
+        ),
+      })
+      editor.add({
+        name: "worker_events",
+        options: { codemode: false },
+        description: "Show a concise one-call worker completion/failure digest. This reads native persisted child session outcomes and does not fabricate proactive alerts.",
+        input: Schema.Struct({}),
+        output: Schema.Array(Schema.Struct({
+          sessionID: SessionSchema.ID,
+          status: Schema.Literals(["running", "idle", "queued", "completed", "failed", "cancelled"]),
+        })),
+        execute: (_, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
+          const children = yield* sessions.list({ parentID: context.sessionID, limit: 100 })
+          const active = yield* sessions.active
+          return children.data.filter((info) => isWorkerOf(info, context.sessionID)).map((info) => ({
+            sessionID: info.id,
+            status: derive({
+              scheduled: scheduler.get(info.id)?.status ?? (recoverableQueuedInstruction(info) ? "queued" : undefined),
+              active: active.has(info.id),
+              outcome: info.outcome,
+            }).status,
+          }))
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.length ? output.map((x) => x.sessionID + ": " + x.status).join("\n") : "No workers for this session." })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to list worker events", error })),
+        ),
+      })
       editor.add({
         name: "agent_list",
         options: { codemode: false },
@@ -99,7 +284,7 @@ export const Plugin = {
       editor.add({
         name: "session_create",
         options: { codemode: false },
-        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Use agent_list to choose an appropriate agent first. Returns an actual worker session ID and the actual running/queued state. At most four run simultaneously; a fifth session is queued automatically and does not count as started.",
+        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Jarvis chooses a suitable installed agent if none is specified; an explicit agent wins. Returns an actual worker session ID and the actual running/queued state. At most four run simultaneously; a fifth session is queued automatically and does not count as started.",
         input: Schema.Struct({
           title: Schema.String,
           instruction: Schema.String,
@@ -114,9 +299,14 @@ export const Plugin = {
         execute: (input, context) =>
           gate.withPermits(1)(Effect.gen(function* () {
             yield* authorize(context.sessionID, context.agent)
+            yield* restoreQueue(context.sessionID)
             if (!input.instruction.trim())
               return yield* new ToolFailure({ message: "Worker instruction cannot be empty." })
-            const selected = yield* agents.select(Agent.ID.make(input.agent ?? "build"))
+            const availableAgents = (yield* agents.list())
+              .filter((agent) => agent.id !== JarvisAgent.ID && !agent.hidden)
+              .map((agent) => ({ id: String(agent.id), description: agent.description }))
+            const chosenID = input.agent ?? pickAgent(input.instruction, availableAgents)?.id ?? "build"
+            const selected = yield* agents.select(Agent.ID.make(chosenID))
             if (selected.id === JarvisAgent.ID)
               return yield* new ToolFailure({ message: "Jarvis cannot be used as a worker agent." })
             if (!selected.info)
@@ -134,7 +324,12 @@ export const Plugin = {
               title: input.title.trim() || input.instruction.slice(0, 70),
               agent: selected.id,
               ...(workerModel ? { model: workerModel } : {}),
-              metadata: { jarvis: { role: "worker" } },
+              metadata: auditAppend(
+                { jarvis: { role: "worker", queue: { status: "queued", instruction: input.instruction } } },
+                "create",
+                "Agent " + selected.id + " / " + (workerModel ? workerModel.providerID + "/" + workerModel.id : "default model"),
+                Date.now(),
+              ),
               // A child otherwise inherits the brain's read-only deny rules.
               // An empty session ruleset lets the worker agent's own permissions apply.
               permissions: [],
@@ -165,12 +360,13 @@ export const Plugin = {
         })),
         execute: (_, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
           const children = yield* sessions.list({ parentID: context.sessionID, limit: 100 })
           const active = yield* sessions.active
           return children.data.filter((info) => isWorkerOf(info, context.sessionID)).map((info) => ({
             sessionID: info.id,
             ...(info.title !== undefined ? { title: info.title } : {}),
-            ...derive({ scheduled: scheduler.get(info.id)?.status, active: active.has(info.id), outcome: info.outcome }),
+            ...derive({ scheduled: scheduler.get(info.id)?.status ?? (recoverableQueuedInstruction(info) ? "queued" : undefined), active: active.has(info.id), outcome: info.outcome }),
             createdAtMs: DateTime.toEpochMillis(info.time.created),
             ...(info.time.busy ? { startedAtMs: DateTime.toEpochMillis(info.time.busy) } : {}),
             ...(!active.has(info.id) && info.time.idle ? { finishedAtMs: DateTime.toEpochMillis(info.time.idle) } : {}),
@@ -202,10 +398,11 @@ export const Plugin = {
         }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
           const info = yield* worker(context.sessionID, input.sessionID)
           const active = yield* sessions.active
           const scheduled = scheduler.get(info.id)
-          const state = derive({ scheduled: scheduled?.status, active: active.has(info.id), outcome: info.outcome })
+          const state = derive({ scheduled: scheduled?.status ?? (recoverableQueuedInstruction(info) ? "queued" : undefined), active: active.has(info.id), outcome: info.outcome })
           const recent = yield* sessions.messages({
             sessionID: info.id,
             limit: 3,
@@ -235,10 +432,11 @@ export const Plugin = {
         output: Schema.Struct({ sessionID: SessionSchema.ID, admitted: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
-          yield* worker(context.sessionID, input.sessionID)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
+          const current = yield* worker(context.sessionID, input.sessionID)
           if (!input.instruction.trim())
             return yield* new ToolFailure({ message: "Follow-up instruction cannot be empty." })
-          if (scheduler.get(input.sessionID)?.status === "queued")
+          if (scheduler.get(input.sessionID)?.status === "queued" || recoverableQueuedInstruction(current))
             return yield* new ToolFailure({ message: "Worker is queued. Wait for it to start before sending follow-ups." })
           yield* sessions.prompt({ sessionID: input.sessionID, text: input.instruction })
           return { sessionID: input.sessionID, admitted: true }
@@ -276,7 +474,12 @@ export const Plugin = {
           const selected = yield* agents.select(Agent.ID.make(input.agent))
           if (!selected.info || selected.id === JarvisAgent.ID)
             return yield* new ToolFailure({ message: "Invalid worker agent" })
+          const current = yield* sessions.get(input.sessionID)
           yield* sessions.switchAgent({ sessionID: input.sessionID, agent: selected.id })
+          yield* sessions.setMetadata({
+            sessionID: input.sessionID,
+            metadata: auditAppend(current.metadata, "agent_switch", String(selected.id), Date.now()),
+          })
           return { sessionID: input.sessionID, agent: String(selected.id) }
         }).pipe(
           Effect.map((output) => ({ output, content: "Worker agent updated to " + output.agent })),
@@ -295,7 +498,12 @@ export const Plugin = {
           const available = yield* models.available()
           if (!available.some((model) => model.providerID + "/" + model.id === input.model))
             return yield* new ToolFailure({ message: "Requested worker model is not available" })
+          const current = yield* sessions.get(input.sessionID)
           yield* sessions.switchModel({ sessionID: input.sessionID, model: ModelSchema.Ref.parse(input.model) })
+          yield* sessions.setMetadata({
+            sessionID: input.sessionID,
+            metadata: auditAppend(current.metadata, "model_switch", input.model, Date.now()),
+          })
           return { sessionID: input.sessionID, model: input.model }
         }).pipe(
           Effect.map((output) => ({ output, content: "Worker model updated to " + output.model })),
@@ -342,8 +550,20 @@ export const Plugin = {
         output: Schema.Struct({ sessionID: SessionSchema.ID, interrupted: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
-          yield* worker(context.sessionID, input.sessionID)
+          yield* gate.withPermits(1)(restoreQueue(context.sessionID))
+          const current = yield* worker(context.sessionID, input.sessionID)
+          const wasQueued = scheduler.get(input.sessionID)?.status === "queued" ||
+            recoverableQueuedInstruction(current) !== undefined
           const cancelled = scheduler.cancel(input.sessionID)
+          if (wasQueued) {
+            yield* sessions.setMetadata({
+              sessionID: input.sessionID,
+              metadata: {
+                ...(current.metadata ?? {}),
+                jarvis: { role: "worker", queue: { status: "cancelled" } },
+              },
+            })
+          }
           const interrupted = cancelled || (yield* sessions.interrupt(input.sessionID))
           return { sessionID: input.sessionID, interrupted }
         }).pipe(

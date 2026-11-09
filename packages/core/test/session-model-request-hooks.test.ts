@@ -1,10 +1,11 @@
 import { describe, expect } from "bun:test"
-import { ToolDefinition } from "@opencode/ai/effect"
+import { SystemPart, ToolDefinition } from "@opencode/ai/effect"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { Agent } from "@opencode/schema/agent"
 import { Money } from "@opencode/schema/money"
 import { Session } from "@opencode/schema/session"
 import type { SessionRequestKind } from "@opencode/plugin/effect/session"
+import { PERSONA_VERSION } from "@opencode/core/jarvis/prompt-guard"
 import { Location } from "@opencode/core/location"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { Project } from "@opencode/core/project"
@@ -126,6 +127,45 @@ describe("SessionModelRequest HTTP hooks", () => {
       expect(replaced.body._tag).toBe("Uint8Array")
       if (replaced.body._tag !== "Uint8Array") return
       expect(new TextDecoder().decode(replaced.body.body)).toBe('{"replaced":true}')
+    }).pipe(Effect.provideService(SessionModelTransport.Service, transport)),
+  )
+
+  it.effect("keeps the built-in environment block in Jarvis requests after a context hook replaces the system prompt", () =>
+    Effect.gen(function* () {
+      const hooks = yield* PluginHooks.Service
+      yield* hooks.register("session", "context", (event) =>
+        Effect.sync(() => {
+          event.system = [SystemPart.make("Injected coding prompt")]
+        }),
+      )
+      const requests = yield* SessionModelRequest.Service.pipe(Effect.provide(SessionModelRequest.layer))
+      const environment = "Here is some useful information about the environment you are running in:\n<env>\n  Working directory: /project\n</env>"
+      const builtIns: SystemPart = {
+        type: "text",
+        text: environment,
+        metadata: {
+          experimental: {
+            instructions: [
+              { key: "core/environment", text: environment },
+              { key: "project/agents", text: "AGENTS.md: Always speak as a programming bot." },
+            ],
+          },
+        },
+      }
+      const prepared = yield* requests.primary({
+        session,
+        agent: Agent.ID.make("jarvis"),
+        model,
+        system: [builtIns],
+        messages: [],
+      })
+      const system = prepared.request.system.map((part) => part.text).join("\n\n")
+
+      expect(system).toContain(PERSONA_VERSION)
+      expect(system).toContain("<env>")
+      expect(system).toContain("Working directory: /project")
+      expect(system).not.toContain("Injected coding prompt")
+      expect(system).not.toContain("Always speak as a programming bot")
     }).pipe(Effect.provideService(SessionModelTransport.Service, transport)),
   )
 

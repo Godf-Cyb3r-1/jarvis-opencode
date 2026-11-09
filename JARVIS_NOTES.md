@@ -21,6 +21,10 @@ This mapping was based on the pinned repository's actual files, not the old `pac
 | Existing web interface | `packages/app/` (not modified; no Jarvis frontend) |
 | Jarvis-only modules | `packages/core/src/jarvis/`, `jarvis/persona.md` |
 
+## Persona language register
+
+Jarvis is calibrated for a Tamil-speaking user from South India. The canonical persona uses a light Tamil Nadu/South Indian English cadence. Hindi fillers and address terms such as `achha`, `arre`, `yaar`, `bhai` and `bhaiya` are explicitly disallowed. Tamil-English touches such as `ayyo`, `seri`, `vanakkam` and `nalla` are allowed sparingly when they fit. The independent `/talk` lane uses the same language rules.
+
 ## New implementation scope
 
 - **No custom UI, browser frontend, orb, or audio work.** Existing OpenCode terminal experience is reused.
@@ -49,5 +53,23 @@ Model availability, disable-reasoning variant, concurrent native execution, dyna
 The user isolated two apparent HTTP 429 failures by comparing the same free model with build/general/explore versus Jarvis: (1) a deny-all agent with zero exposed tools, and (2) a noncanonical deterministic session ID. A 429 may also indicate a genuine rate/quota limit; inspect the request shape before classifying it.
 
 This fork previously had the zero-tool Jarvis definition, which is now changed to deny-by-default plus explicit read, glob, grep and question permissions. Code-editing and shell tools stay denied in the brain. The current tree **did not contain** an existing custom deterministic Jarvis ID generator. The native adapter now retrieves tagged brain sessions via session metadata and calls Session.Service.create without an ID for new ones. The adapter's ID reuse still requires integration-level restart tests; model/gateway confirmation needs local provider credentials.
+
+### Verified request-shape trigger: missing built-in environment block (2026-11-04)
+
+A live A/B on the same free model (`opencode/deepseek-v4.1-flash-free`), same session directory, and same headers isolated the remaining agent-specific 429:
+
+| Final system prompt | Agent/tools | Result |
+|---|---|---|
+| Normal `build` prompt | build, 24 tools | 200 |
+| Jarvis persona only | jarvis, 17 tools | 429 `FreeUsageLimitError` |
+| Jarvis persona plus OpenCode `<env>` block | jarvis, 17 tools | 200 |
+| Build prompt on the `jarvis` agent | jarvis, 17 tools | 200 |
+| Jarvis persona on the `build` agent | build, 24 tools | 429 `FreeUsageLimitError` |
+
+The failure follows the system prompt, not the agent or tool count. The free gateway reports a missing built-in environment block as its misleading usage-limit 429. The same fix passed with `opencode/big-pickle` and `opencode/glm-5.3-flash-free`.
+
+The canonical prompt guard was discarding **all** instruction parts, including OpenCode's built-in `core/date` and `core/environment` sources, leaving only the persona. `canonicalSystem` now retains those two built-in sources and discards project/plugin instructions; `SessionModelRequest` passes the pre-hook system parts so a context hook cannot strip the environment block. Unit coverage is in `packages/core/src/jarvis/prompt-guard.test.ts`.
+
+Development-only note: running the source CLI directly advertises `opencode/local/local/cli`; the free gateway also rejects that user agent. Release builds advertise `opencode/latest/<version>/cli` and are unaffected.
 
 See `jarvis/429_FIX_TESTING.md` for regression checks and Linux commands.

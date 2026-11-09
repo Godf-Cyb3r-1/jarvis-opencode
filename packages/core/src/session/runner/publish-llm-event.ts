@@ -258,6 +258,11 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         }),
       (_id, value, ordinal) =>
         Effect.gen(function* () {
+          // The model's partial text can contain unsupported cues, markdown,
+          // stray clocks, or unspoken punctuation. Deliver the canonical
+          // finalized Jarvis text instead of leaking raw unsanitized deltas.
+          // Other agents and reasoning retain their normal streaming behavior.
+          if (name === "text" && input.agent === "jarvis") return
           yield* bus.publish(events.Delta, {
             sessionID: input.sessionID,
             assistantMessageID: yield* currentAssistantMessageID(),

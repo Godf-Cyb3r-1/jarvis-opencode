@@ -11,6 +11,7 @@ import { SessionContext } from "./context.js"
 import type { AgentNotFoundError } from "./error.js"
 import { SessionHistory } from "./history.js"
 import { SessionModelRequest } from "./model-request.js"
+import { normalizeJarvisText } from "../jarvis/expression-policy.js"
 import { ModelRetry } from "../model-retry.js"
 import type { SessionRunnerModel } from "./runner/model.js"
 import type { SessionSchema } from "./schema.js"
@@ -63,6 +64,8 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
     })
     const response = yield* llm.generate(prepared.request, prepared.options).pipe(ModelRetry.retry)
     yield* Effect.logInfo("session generation usage diagnostic", { usage: response.usage })
-    return response.text
+    // Auxiliary generation bypasses the durable Text.Ended publisher. Apply
+    // Jarvis speech normalization before returning to /talk, /btw or callers.
+    return selection.agent.id === "jarvis" ? normalizeJarvisText(response.text).text : response.text
   }).pipe(instances.provide(input.session))
 })
