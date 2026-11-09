@@ -104,6 +104,27 @@ export const Plugin = define({
           })
         }
       }
+      // Shared for existing build, general, explore, plan and configured agents.
+      // No new agent is created and user-defined agent settings remain intact.
+      const routing = [
+        "[JARVIS_INSTABOX_ROUTING_V1]",
+        "Default host environment is for inspection and local app interaction.",
+        "Run package installs, builds, compilers, downloaded tooling, recon/fuzz tools,",
+        "wordlists, virtualenvs and other compute-heavy work in Instabox.",
+        "First call instabox_status. If unavailable, ask the user to install Instabox",
+        "and complete browser/device login; never install or log in without consent.",
+        "Then use instabox_exec for commands within /data/workspace.",
+        "No fallback to local shell execution on remote failures.",
+        "For purely local reads and application tasks, use existing local tools.",
+      ].join("\n")
+      for (const current of editor.list()) {
+        if (current.id === Agent.ID.make("jarvis")) continue
+        editor.update(current.id, (agent) => {
+          if (!agent.system?.includes("[JARVIS_INSTABOX_ROUTING_V1]")) {
+            agent.system = [agent.system, routing].filter(Boolean).join("\n\n")
+          }
+        })
+      }
     })
   }),
 })
