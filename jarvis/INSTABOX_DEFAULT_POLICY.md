@@ -6,6 +6,13 @@ modified Jarvis engine runs. The brain remains a delegating controller.
 
 ## First run
 
+On a fresh Windows Electron installation, if the Instabox CLI is not found,
+Jarvis offers a one-time graphical choice: **Install & sign in** (opens a
+visible terminal running the official `npx instabox@latest sh` quick start),
+**View instructions**, or **Not now**. It never blocks local startup. If
+the CLI is installed but the account is not authenticated, the remote task
+check below provides the login instructions.
+
 The first remote task calls `instabox_status`. If the CLI is not found,
 authentication is missing, or the machine is inaccessible, Jarvis must
 ask the user to perform the following **manually** in a local terminal:
