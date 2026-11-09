@@ -2,7 +2,7 @@ name: Jarvis Native Android GUI (reused existing app)
 on:
   workflow_dispatch:
   push:
-    branches: [feature/jarvis-native-gui-desktop-android]
+    branches: [feature/jarvis-native-gui-desktop-android, feature/jarvis-always-available-conversation]
     paths:
       - 'jarvis/patch-native-android.py'
       - '.github/workflows/jarvis-native-android-gui.yml'

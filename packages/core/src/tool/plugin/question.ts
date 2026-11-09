@@ -18,7 +18,11 @@ export const description = `Use this tool when you need to ask the user question
 Usage notes:
 - A "Type your own answer" option is added automatically; don't include a separate option for free form answers
 - Set \`multiple: true\` to allow selecting more than one option
-- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label`
+- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label
+- For Jarvis, prefer a plain conversational question in your own chat reply when only one simple detail is needed. Don't open a dropdown for casual dialogue.
+- When a structured form is necessary, make question.question one natural sentence spoken to a person, not a machine label or raw checklist. Avoid reading the options, long descriptions, or UI control labels aloud.
+- The selectable options are for visual interaction only. The spoken prompt must be concise and natural; do not narrate or enumerate the selection UI.
+- Ask only the information actually blocking progress. Continue other assigned worker tasks independently while waiting for an answer.`
 
 export const Input = Schema.Struct({
   questions: Schema.Array(Question.Prompt).check(Schema.isNonEmpty()).annotate({ description: "Questions to ask" }),

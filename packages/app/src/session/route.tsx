@@ -30,6 +30,7 @@ import { ServerUnavailablePanel } from "./server-unavailable-panel"
 import { SessionErrorFallback } from "./route-error"
 import { createSessionResolution } from "./session-resolution"
 import { SessionScreenView } from "./screen"
+import { JarvisTalkLane } from "./jarvis-talk-lane"
 import { PreparingComposer } from "./preparing-composer"
 
 export function TargetSessionRouteContent() {
@@ -212,7 +213,12 @@ function TargetSessionPage() {
 function SessionPage() {
   const session = useSessionModel()
 
-  return <SessionScreenView session={session} />
+  return (
+    <>
+      <SessionScreenView session={session} />
+      <JarvisTalkLane />
+    </>
+  )
 }
 
 function MarkSessionViewed(props: { sessionID: () => string | undefined }) {

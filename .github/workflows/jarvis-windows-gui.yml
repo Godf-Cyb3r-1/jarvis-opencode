@@ -2,7 +2,7 @@ name: Jarvis Windows graphical desktop (Electron)
 on:
   workflow_dispatch:
   push:
-    branches: [feature/jarvis-native-gui-desktop-android, feature/jarvis-default-instabox-routing]
+    branches: [feature/jarvis-native-gui-desktop-android, feature/jarvis-default-instabox-routing, feature/jarvis-always-available-conversation]
     paths:
       - 'packages/**'
       - 'jarvis/**'
