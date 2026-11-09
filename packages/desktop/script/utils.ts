@@ -135,5 +135,5 @@ async function prepareCli(dest: string) {
 export function windowsify(path: string) {
   if (path.endsWith(".exe")) return path
 
-  return `${path}${process.platform === "win32" ? ".exe" : ""}`
+  return `${path}${getCurrentCli().os === "win32" ? ".exe" : ""}`
 }

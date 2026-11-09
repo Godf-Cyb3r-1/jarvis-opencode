@@ -1,0 +1,52 @@
+name: Jarvis Native Android GUI (reused existing app)
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/jarvis-native-gui-desktop-android]
+    paths:
+      - 'jarvis/patch-native-android.py'
+      - '.github/workflows/jarvis-native-android-gui.yml'
+permissions:
+  contents: read
+jobs:
+  native-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out proven native Android Jarvis source
+        uses: actions/checkout@v4
+        with:
+          repository: Godf-Cyb3r-1/opencode-voice-android
+          ref: e197e5dd70111148204e842e73da9a6edad1b0b9
+          path: native-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Reuse existing native dashboard and add Instabox setting
+        run: python3 jarvis/patch-native-android.py
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+      - name: Prepare existing offline speech assets
+        working-directory: native-android/opencode-android
+        run: |
+          bash scripts/prepare_pocket.sh
+          bash scripts/prepare_streaming_stt.sh
+      - name: Build actual native Android app
+        working-directory: native-android/opencode-android
+        run: |
+          chmod +x gradlew scripts/build.sh
+          TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS=0 bash scripts/build.sh
+      - name: Package APK
+        run: |
+          mkdir -p artifacts
+          cp native-android/opencode-android/app/build/outputs/apk/debug/*.apk artifacts/
+          (cd artifacts && sha256sum *.apk > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-native-android-gui
+          path: artifacts/
+          if-no-files-found: error

@@ -1,0 +1,56 @@
+name: Jarvis Windows graphical desktop (Electron)
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/jarvis-native-gui-desktop-android]
+    paths:
+      - 'packages/**'
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-windows-gui.yml'
+permissions:
+  contents: read
+jobs:
+  windows-gui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      OPENCODE_VERSION: '2.2.5'
+      OPENCODE_CHANNEL: latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install dependencies for cross packaging
+        run: |
+          bun install --frozen-lockfile
+          bun install --os="*" --cpu="*" --libc="*" @lydell/node-pty@1.2.0-beta.12
+      - name: Build Jarvis Windows engine (baseline)
+        env:
+          OPENCODE_TARGET: windows-x64-baseline
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui --skip-install
+      - name: Build graphical desktop renderer with Jarvis engine
+        env:
+          OPENCODE_TARGET: windows-x64
+        run: bun run --cwd packages/desktop script/build.ts
+      - name: Package Windows desktop GUI
+        env:
+          OPENCODE_TARGET: windows-x64
+        run: bun run --cwd packages/desktop script/pack.ts
+      - name: Verify graphical executable and bundled engine
+        run: |
+          set -euo pipefail
+          test -d dist/desktop/app
+          test -f dist/desktop/app/resources/opencode-cli.exe
+          file dist/desktop/app/resources/opencode-cli.exe | grep -E 'PE32|PE32\+'
+          gui=$(find dist/desktop/app -maxdepth 1 -type f -name '*.exe' | head -1)
+          test -n "$gui"
+          file "$gui" | grep -E 'PE32|PE32\+'
+          mkdir -p artifacts
+          (cd dist/desktop && zip -qr ../../artifacts/Jarvis-Windows-GUI-x64.zip app)
+          (cd artifacts && sha256sum Jarvis-Windows-GUI-x64.zip > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-windows-graphical-desktop
+          path: artifacts/
+          if-no-files-found: error
