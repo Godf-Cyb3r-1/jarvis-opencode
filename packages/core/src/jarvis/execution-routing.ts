@@ -17,7 +17,7 @@ const reads = [
 ]
 
 const installation = [
-  /(?:^|[^\w-])(?:winget|choco|scoop|msiexec|apt(?:-get)?|dnf|yum|pacman|brew|pip3?|pipx|uv|cargo|gem|go|gradle|mvn|docker|podman|npm|pnpm|yarn|bun|npx|git|curl|wget|powershell|pwsh|iex|invoke-expression|invoke-webrequest)(?:\s|$)/i,
+  /(?:^|[^\w-])(?:winget|choco|scoop|msiexec|apt(?:-get)?|dnf|yum|pacman|brew|pip3?|pipx|uv|cargo|gem|go|gradle|mvn|docker|podman|npm|pnpm|yarn|bun|npx|curl|wget|powershell|pwsh|iex|invoke-expression|invoke-webrequest)(?:\s|$)/i,
   /\b(?:install|add|upgrade|update|build|compile|clone|pull|fetch|restore|download|bootstrap|setup|make|cmake|fuzz|recon|wordlist|venv|virtualenv|pip)\b/i,
   /(?:program files|appdata|system32|windows\\installer|\/usr\/(?:local|bin)|\/etc\/|\/opt\/)/i,
 ]
