@@ -15,6 +15,7 @@ import { activitySummary, derive } from "./worker-state.js"
 import { findMemories, forget, remember } from "./memory.js"
 import { auditAppend, auditItems, pickAgent } from "./administration.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-memory.js"
+import { checkInstabox, runInstabox } from "./instabox-runtime.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -137,6 +138,30 @@ export const Plugin = {
     })
 
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "instabox_status",
+        options: { codemode: false },
+        description: "Check whether the local Instabox CLI is installed, signed in and has an accessible remote machine. If not, explain the required one-time user-approved setup; NEVER install or log in silently.",
+        input: Schema.Struct({ machine: Schema.optionalKey(Schema.String) }),
+        output: Schema.Struct({ ready: Schema.Boolean, machine: Schema.String, message: Schema.String }),
+        execute: (input) =>
+          Effect.promise(() => checkInstabox(input.machine)).pipe(
+            Effect.map((output) => ({ output, content: output.message })),
+            Effect.mapError((error) => new ToolFailure({ message: "Instabox status check failed", error })),
+          ),
+      })
+      editor.add({
+        name: "instabox_exec",
+        options: { codemode: false },
+        description: "Run installs, builds, package managers, tool downloads and compute commands ONLY in the configured Instabox Linux machine, under /data/workspace. First call instabox_status. The tool never falls back to local execution.",
+        input: Schema.Struct({ command: Schema.String, machine: Schema.optionalKey(Schema.String) }),
+        output: Schema.Struct({ output: Schema.String, machine: Schema.String }),
+        execute: (input) =>
+          Effect.promise(() => runInstabox(input.command, input.machine)).pipe(
+            Effect.map((output) => ({ output: { output, machine: input.machine ?? process.env.JARVIS_INSTABOX_MACHINE ?? "jarvis" }, content: output || "Command completed with no output." })),
+            Effect.mapError((error) => new ToolFailure({ message: "Instabox remote execution unavailable: " + String(error), error })),
+          ),
+      })
       editor.add({
         name: "agent_pick",
         options: { codemode: false },
