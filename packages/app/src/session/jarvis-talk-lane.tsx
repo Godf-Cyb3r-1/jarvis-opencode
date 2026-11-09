@@ -52,7 +52,7 @@ export function JarvisTalkLane() {
 
   return (
     <Show when={visible()}>
-      <div class="absolute bottom-5 right-5 z-[90] flex flex-col items-end gap-2 pointer-events-auto">
+      <div class="absolute bottom-28 right-5 z-[90] flex flex-col items-end gap-2 pointer-events-auto">
         <Show when={open()}>
           <section class="flex h-[min(420px,65vh)] w-[min(360px,85vw)] flex-col overflow-hidden rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-02 shadow-lg" aria-label="Jarvis always available chat">
             <div class="flex items-center justify-between border-b border-v2-border-border-base p-3">
