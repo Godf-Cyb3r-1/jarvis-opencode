@@ -159,7 +159,7 @@ change_coordinator('''        final String context=activeWork.isEmpty()
 '''        final String context=activeTasks.isEmpty()
             ? "No delegated work is running."
             : "Delegated work continues in parallel. Project: "+project+
-                ". Active tasks: "+String.join("; ", activeTasks.values())+
+                ". Active tasks: "+android.text.TextUtils.join("; ", activeTasks.values())+
                 ". Queued: "+pendingTasks.size()+". Latest stage: "+workStage;''')
 
 change_coordinator('''        activeWork=instruction;
@@ -203,7 +203,7 @@ change_coordinator('''            @Override public void onResult(String result) 
                 activeTasks.remove(revision);
                 activeExecutors.remove(revision);
                 taskClient.close();
-                activeWork=String.join("; ", activeTasks.values());
+                activeWork=android.text.TextUtils.join("; ", activeTasks.values());
                 workStage=activeTasks.isEmpty() ? "completed" : "working";
                 registry.updateProject(project,"Task: "+instruction+"; Result: "+result.substring(0,Math.min(1500,result.length())));
                 startNextQueuedTask();
@@ -216,7 +216,7 @@ change_coordinator('''            @Override public void onError(String diagnosti
                 activeTasks.remove(revision);
                 activeExecutors.remove(revision);
                 taskClient.close();
-                activeWork=String.join("; ", activeTasks.values());
+                activeWork=android.text.TextUtils.join("; ", activeTasks.values());
                 workStage=activeTasks.isEmpty() ? "error" : "working";
                 startNextQueuedTask();
                 if(enabled) {''')
