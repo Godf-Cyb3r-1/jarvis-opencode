@@ -16,6 +16,7 @@ export const permissions = [
   { action: "grep", resource: "*", effect: "allow" },
   { action: "question", resource: "*", effect: "allow" },
   { action: "agent_list", resource: "*", effect: "allow" },
+  { action: "instabox_status", resource: "*", effect: "allow" },
   { action: "model_list", resource: "*", effect: "allow" },
   { action: "session_create", resource: "*", effect: "allow" },
   { action: "session_status", resource: "*", effect: "allow" },
