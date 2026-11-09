@@ -38,6 +38,7 @@ import { KV } from "../kv.js"
 import { SessionStore } from "./store.js"
 import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { itemsOf } from "../jarvis/memory.js"
+import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis/cloud-memory.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -348,6 +349,15 @@ export const layer = Layer.effect(
             const historyStore = Option.isSome(storeOption) ? storeOption.value : undefined
             const key = "jarvis:memory:project:" + session.projectID
             const stored = yield* kv.get(key)
+            const pending = (yield* kv.get(pendingKey(session.projectID))) === true
+            const resolved = yield* Effect.promise(() =>
+              resolveMemory(session.projectID, stored as Record<string, unknown> | undefined, pending),
+            )
+            if (resolved.error) yield* Effect.logWarning("jarvis.cloud_memory.read_failed", { error: resolved.error })
+            if (resolved.synced && resolved.state) {
+              yield* kv.set(key, resolved.state as KV.Value)
+              if (pending) yield* kv.set(pendingKey(session.projectID), false)
+            }
             const marker = "jarvis:memory:backfill:v1:" + session.projectID
             const alreadyBackfilled = (yield* kv.get(marker)) === true
             // One-time bounded migration of explicitly stated preferences in
@@ -375,10 +385,17 @@ export const layer = Layer.effect(
                 part.type === "text" ? [part.text] : [],
               ))
             const learned = learnFromUserTexts(
-              stored as Record<string, unknown> | undefined,
+              resolved.state,
               [...oldTexts, ...texts], Date.now(),
             )
-            if (learned.changed) yield* kv.set(key, learned.state as KV.Value)
+            if (learned.changed) {
+              yield* kv.set(key, learned.state as KV.Value)
+              if (cloudEnabled()) {
+                const saved = yield* Effect.promise(() => mirrorMemory(session.projectID, learned.state))
+                yield* kv.set(pendingKey(session.projectID), !saved)
+                if (!saved) yield* Effect.logWarning("jarvis.cloud_memory.write_failed")
+              }
+            }
             if (!alreadyBackfilled) yield* kv.set(marker, true)
             if (process.env.JARVIS_PROMPT_DIAGNOSTICS === "1") {
               yield* Effect.logInfo("jarvis.auto_memory", {
