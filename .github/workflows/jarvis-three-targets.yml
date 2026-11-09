@@ -47,31 +47,30 @@ jobs:
           path: artifact/
           if-no-files-found: error
   windows-exe:
-    runs-on: windows-2022
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.4'
       - run: bun install --frozen-lockfile
-      - name: Build Windows standalone EXE
+      - name: Cross-compile Windows standalone EXE
         env:
           OPENCODE_VERSION: '2.2.5'
           OPENCODE_CHANNEL: latest
           OPENCODE_TARGET: win32-x64
         run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
-      - name: Package Windows EXE
+      - name: Package Windows PE executable
         run: |
+          set -euo pipefail
           mkdir -p artifact
           executable=$(find packages/cli/dist -type f -name 'opencode.exe' | head -1)
           test -n "$executable"
+          file "$executable" | grep -E 'PE32|PE32\+'
           cp "$executable" artifact/jarvis-opencode-windows-x64.exe
           cp jarvis/run-mode.ps1 artifact/run-mode.ps1
-          ./artifact/jarvis-opencode-windows-x64.exe --version
+          (cd artifact && sha256sum jarvis-opencode-windows-x64.exe > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: jarvis-windows-x64-exe
