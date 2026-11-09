@@ -44,7 +44,7 @@ export const Plugin = {
     const kv = yield* KV.Service
     const loadMemory = Effect.fn("Jarvis.CloudMemory.load")(function* (projectID: string) {
       const key = "jarvis:memory:project:" + projectID
-      const local = yield* kv.get(key) as Record<string, unknown> | undefined
+      const local = (yield* kv.get(key)) as Record<string, unknown> | undefined
       const pending = (yield* kv.get(pendingKey(projectID))) === true
       const result = yield* Effect.promise(() => resolveMemory(projectID, local, pending))
       if (result.error) yield* Effect.logWarning("jarvis.cloud_memory.read_failed", { error: result.error })
@@ -181,7 +181,6 @@ export const Plugin = {
           const parent = yield* authorize(context.sessionID, context.agent)
           if (!input.text.trim()) return yield* new ToolFailure({ message: "Memory cannot be empty." })
           const id = "mem_" + crypto.randomUUID()
-          const key = "jarvis:memory:project:" + parent.projectID
           const previous = yield* loadMemory(parent.projectID)
           const metadata = remember(previous as Record<string, unknown> | undefined, input.text, id, Date.now())
           yield* saveMemory(parent.projectID, metadata)
@@ -214,7 +213,6 @@ export const Plugin = {
         output: Schema.Struct({ removed: Schema.Boolean }),
         execute: (input, context) => Effect.gen(function* () {
           const parent = yield* authorize(context.sessionID, context.agent)
-          const key = "jarvis:memory:project:" + parent.projectID
           const previous = yield* loadMemory(parent.projectID)
           const result = forget(previous as Record<string, unknown> | undefined, input.id)
           if (result.removed) yield* saveMemory(parent.projectID, result.metadata)
