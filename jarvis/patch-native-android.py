@@ -130,3 +130,115 @@ if target not in spoken:
     raise SystemExit("Android JarvisSpeechStyle.prepare changed; cannot apply voice patch")
 voice.write_text(spoken.replace(target, substitute, 1))
 print("Patched native spoken response rendering:", voice)
+
+
+# The original coordinator tracked only one work client, so new work could
+# overwrite status while a previous task was still executing. Maintain one
+# independent OpenCode session per task, with up to four running in parallel.
+coordinator_path = Path("native-android/opencode-android/app/src/main/java/com/termux/app/JarvisCoordinator.java")
+coordinator = coordinator_path.read_text()
+def change_coordinator(before, after):
+    global coordinator
+    if before not in coordinator:
+        raise SystemExit("JarvisCoordinator integration anchor changed: " + before[:110])
+    coordinator = coordinator.replace(before, after, 1)
+
+change_coordinator("    private JarvisEngineClient executor;",
+'''    private JarvisEngineClient executor;
+    private final java.util.concurrent.ConcurrentHashMap<Integer, JarvisEngineClient> activeExecutors =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<Integer, String> activeTasks =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentLinkedQueue<String> pendingTasks =
+        new java.util.concurrent.ConcurrentLinkedQueue<>();''')
+
+change_coordinator('''        final String context=activeWork.isEmpty()
+            ? "No delegated work is running."
+            : "A delegated task is running. Project: "+project+
+                ". Latest stage: "+workStage+". Task: "+activeWork;''',
+'''        final String context=activeTasks.isEmpty()
+            ? "No delegated work is running."
+            : "Delegated work continues in parallel. Project: "+project+
+                ". Active tasks: "+String.join("; ", activeTasks.values())+
+                ". Queued: "+pendingTasks.size()+". Latest stage: "+workStage;''')
+
+change_coordinator('''        activeWork=instruction;
+        registry.updateProject(project,instruction);
+        final int revision=++workRevision;
+        events.onMilestone("Subagent accepted task");''',
+'''        if (activeTasks.size() >= 4) {
+            pendingTasks.add(instruction);
+            events.onMilestone("Four tasks are active. New task queued without interruption.");
+            return;
+        }
+        final int revision=++workRevision;
+        final JarvisEngineClient taskClient = new JarvisEngineClient(context, false,
+            project + "/task-" + java.util.UUID.randomUUID().toString());
+        activeExecutors.put(revision, taskClient);
+        activeTasks.put(revision, instruction);
+        executor=taskClient;
+        activeWork=instruction;
+        registry.updateProject(project,instruction);
+        events.onMilestone("Subagent accepted task");''')
+
+change_coordinator('''        executor.submit(instruction,new JarvisEngineClient.Callback() {
+            @Override public void onStage(String stage) {
+                workStage=stage;
+                if(enabled) events.onMilestone("Subagent: "+stage);
+            }''',
+'''        taskClient.submit(instruction,new JarvisEngineClient.Callback() {
+            @Override public void onStage(String stage) {
+                if(revision==workRevision) workStage=stage;
+                if(enabled) events.onMilestone("Subagent: "+stage);
+            }''')
+
+change_coordinator('''            @Override public void onResult(String result) {
+                if(revision==workRevision) {
+                    activeWork="";
+                    workStage="completed";
+                    registry.updateProject(project,"Task: "+instruction+"; Result: "+result.substring(0,Math.min(1500,result.length())));
+                }
+                if(enabled) {''',
+'''            @Override public void onResult(String result) {
+                activeTasks.remove(revision);
+                activeExecutors.remove(revision);
+                taskClient.close();
+                activeWork=String.join("; ", activeTasks.values());
+                workStage=activeTasks.isEmpty() ? "completed" : "working";
+                registry.updateProject(project,"Task: "+instruction+"; Result: "+result.substring(0,Math.min(1500,result.length())));
+                startNextQueuedTask();
+                if(enabled) {''')
+
+change_coordinator('''            @Override public void onError(String diagnostic) {
+                workStage="error";
+                if(enabled) {''',
+'''            @Override public void onError(String diagnostic) {
+                activeTasks.remove(revision);
+                activeExecutors.remove(revision);
+                taskClient.close();
+                activeWork=String.join("; ", activeTasks.values());
+                workStage=activeTasks.isEmpty() ? "error" : "working";
+                startNextQueuedTask();
+                if(enabled) {''')
+
+change_coordinator('''    void close() {
+        enabled=false;
+        dialogue.close();
+        executor.close();
+    }''',
+'''    private void startNextQueuedTask() {
+        String next = pendingTasks.poll();
+        if(next!=null && enabled) ui.post(() -> delegateWork(next));
+    }
+
+    void close() {
+        enabled=false;
+        dialogue.close();
+        for(JarvisEngineClient worker:activeExecutors.values()) worker.close();
+        activeExecutors.clear();
+        activeTasks.clear();
+        pendingTasks.clear();
+        executor.close();
+    }''')
+coordinator_path.write_text(coordinator)
+print("Patched independent Android worker sessions:", coordinator_path)
