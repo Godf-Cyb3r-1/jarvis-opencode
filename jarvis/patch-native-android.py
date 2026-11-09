@@ -120,7 +120,7 @@ voice = Path("native-android/opencode-android/app/src/main/java/com/termux/app/J
 spoken = voice.read_text()
 target = "        String text = normalizeOmniVoiceTags(raw)\n"
 substitute = r'''        String human = raw.replaceAll("(?i)\\[(?:laughter|sigh|confirmation-en|question-(?:oh|en|ah|ei|yi)|surprise-(?:ah|wa|yo|oh)|dissatisfaction-hnn)\\]", " ").trim();
-        if (human.contains("\x60\x60\x60") || human.startsWith("{") ||
+        if (human.contains("```") || human.startsWith("{") ||
             human.matches("(?s).*(?:Traceback \\(most recent call last\\)|Exception in thread).*"))
             return "I've put the technical details on screen.";
         String text = normalizeOmniVoiceTags(raw)
