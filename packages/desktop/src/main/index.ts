@@ -25,6 +25,12 @@ if (acquireApplicationLock()) {
     marks.window = Date.now()
     startSidecarProbe()
 
+    // Offer optional Instabox onboarding after the first graphical window exists.
+    // Never prevent ordinary local startup if the CLI is unavailable.
+    void import("./native/instabox-onboarding")
+      .then(({ showInstaboxOnboarding }) => showInstaboxOnboarding())
+      .catch(() => {})
+
     // The window's renderer is already loading. Its HTML and preloaded chunks are served from this
     // thread, so the bundle waits for that burst to be answered (or a cap) before it evaluates.
     if (!process.env.ELECTRON_RENDERER_URL) await rendererAssetsServed({ quietMs: 40, capMs: 400 })
