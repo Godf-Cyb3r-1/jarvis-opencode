@@ -1,7 +1,7 @@
 name: Jarvis V3 Linux graphical desktop (Electron)
 on:
   push:
-    branches: [fix/jarvis-universal-capabilities-gui-v3-20261110]
+    branches: [fix/jarvis-universal-capabilities-gui-v3-20261110, feature/jarvis-core-v2-brief-20261110]
     paths:
       - 'packages/**'
       - 'jarvis/**'
