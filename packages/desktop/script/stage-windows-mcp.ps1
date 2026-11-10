@@ -13,7 +13,7 @@ if (Test-Path -LiteralPath $pythonDest) { Remove-Item -LiteralPath $pythonDest -
 if (Test-Path -LiteralPath $packages) { Remove-Item -LiteralPath $packages -Recurse -Force }
 Copy-Item -LiteralPath $pythonDir -Destination $pythonDest -Recurse -Force
 New-Item -ItemType Directory -Force -Path $packages | Out-Null
-& uv pip install --python $python --target $packages "windows-mcp==0.8.8"
+& uv pip install --python $python --target $packages "git+https://github.com/CursorTouch/Windows-MCP.git@59e3b194799d5a1ced14298bca4cd200f7edbfd8"
 if ($LASTEXITCODE -ne 0) { throw "Offline Windows-MCP dependency staging failed" }
 $exe = Join-Path $pythonDest "python.exe"
 $bootstrap = Join-Path $destination "bootstrap.py"
@@ -23,4 +23,4 @@ if (!(Test-Path -LiteralPath $exe) -or !(Test-Path -LiteralPath $main)) { throw 
 if ($LASTEXITCODE -ne 0) { throw "Packaged Windows-MCP bootstrap failed the native Windows smoke test" }
 & $exe -c 'import sys; print("Python runtime:", sys.version)'
 if ($LASTEXITCODE -ne 0) { throw "Staged Python executable is not runnable" }
-Write-Output "Windows-MCP 0.8.8 native Windows bootstrap OK; offline sidecar files staged."
+Write-Output "Windows-MCP pinned-source native Windows bootstrap OK; offline sidecar files staged."
