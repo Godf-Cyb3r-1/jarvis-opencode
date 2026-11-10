@@ -65,6 +65,39 @@ export const Plugin = {
 
     yield* ctx.tool.transform((editor) => {
       editor.add({
+        name: "capability_discover",
+        options: { codemode: false },
+        description: "Discover live OpenCode workers and available models in a single call before claiming a task is impossible. This reports registered capabilities, not proof that a browser or external application is installed.",
+        input: Schema.Struct({}),
+        output: Schema.Struct({
+          workers: Schema.Array(Schema.Struct({ id: Schema.String, description: Schema.String })),
+          models: Schema.Array(Schema.Struct({ providerID: Schema.String, modelID: Schema.String })),
+          activeWorkers: Schema.Number,
+          queuedWorkers: Schema.Number,
+        }),
+        execute: (_, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          const workers = (yield* agents.list())
+            .filter((candidate) => candidate.id !== JarvisAgent.ID)
+            .map((candidate) => ({ id: String(candidate.id), description: candidate.description ?? "" }))
+          const available = yield* models.available()
+          return {
+            workers,
+            models: available.map((model) => ({ providerID: String(model.providerID), modelID: String(model.id) })),
+            activeWorkers: scheduler.runningCount,
+            queuedWorkers: scheduler.queuedCount,
+          }
+        }).pipe(
+          Effect.map((output) => ({
+            output,
+            content: "Available workers: " + (output.workers.map((worker) => worker.id + (worker.description ? " (" + worker.description + ")" : "")).join("; ") || "none")
+              + "\\nAvailable models: " + output.models.map((model) => model.providerID + "/" + model.modelID).join(", ")
+              + "\\nWorker slots: " + output.activeWorkers + " running, " + output.queuedWorkers + " queued",
+          })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to discover Jarvis capabilities", error })),
+        ),
+      })
+      editor.add({
         name: "agent_list",
         options: { codemode: false },
         description: "List available OpenCode worker agents and their descriptions before choosing which agent should do a delegated task.",
