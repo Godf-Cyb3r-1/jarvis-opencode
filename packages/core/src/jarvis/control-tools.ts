@@ -18,6 +18,7 @@ import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-m
 import { checkInstabox, runInstabox } from "./instabox-runtime.js"
 import { planExecution, preferredReasoningVariant } from "./fast-path.js"
 import { executeQuickAction } from "./quick-action.js"
+import { recordJarvisTrace } from "./performance.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -94,6 +95,13 @@ export const Plugin = {
       },
     )
 
+    scheduler.onEvent((event) => {
+      const phase = event.type === "queued" ? "t_worker_queued" :
+        event.type === "running" ? "t_worker_started" :
+        event.type === "completed" ? "t_worker_completed" :
+        event.type === "failed" ? "t_worker_failed" : undefined
+      if (phase) recordJarvisTrace({ phase, sessionID: String(event.task.id) })
+    })
     const restoredParents = new Set<string>()
     const restoreQueue = Effect.fn("JarvisControl.restoreQueue")(function* (parentID: SessionSchema.ID) {
       if (restoredParents.has(parentID)) return
