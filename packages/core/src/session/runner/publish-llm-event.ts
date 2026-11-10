@@ -17,6 +17,7 @@ import { contentFilterError } from "../to-session-error.js"
 import type { Tool } from "../../tool.js"
 import { stringify } from "../../tool/runtime.js"
 import { normalizeJarvisText } from "../../jarvis/expression-policy.js"
+import { recordJarvisTrace } from "../../jarvis/performance.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -230,6 +231,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
   }
 
   let jarvisExpressionUsed = false
+  let jarvisFirstAckRecorded = false
   const contentFragments = (name: string, events: typeof SessionEvent.Text | typeof SessionEvent.Reasoning) =>
     fragments(
       name,
@@ -237,6 +239,10 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         Effect.gen(function* () {
           let content = value
           if (name === "text" && input.agent === "jarvis") {
+            if (!jarvisFirstAckRecorded && content.trim()) {
+              jarvisFirstAckRecorded = true
+              recordJarvisTrace({ phase: "t_ack", sessionID: String(input.sessionID) })
+            }
             const clean = normalizeJarvisText(content, { alreadyUsed: jarvisExpressionUsed })
             content = clean.text
             if (clean.accepted) jarvisExpressionUsed = true
