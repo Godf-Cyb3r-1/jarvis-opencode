@@ -8,6 +8,9 @@ on:
       - 'packages/core/src/session/**'
       - '.github/workflows/jarvis-core-v2-benchmark.yml'
   workflow_dispatch:
+concurrency:
+  group: jarvis-v2-benchmark-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
