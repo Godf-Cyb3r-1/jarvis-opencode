@@ -8,7 +8,7 @@ import { dirname, isAbsolute } from "node:path"
 export type JarvisPhase =
   | "t_msg" | "t_intent" | "t_action_launched" | "t_ack"
   | "t_verified" | "t_worker_queued" | "t_worker_started"
-  | "t_worker_failed" | "t_provider_error"
+  | "t_worker_failed" | "t_provider_error" | "t_route_available" | "t_refusal" | "t_cue" | "t_success_claim"
 export type JarvisTraceEvent = {
   schema: 1
   phase: JarvisPhase
@@ -19,6 +19,7 @@ export type JarvisTraceEvent = {
   action?: string
   verified?: boolean
   outcome?: "success" | "failure" | "unknown"
+  openerHash?: string
 }
 let disabled = false
 export function recordJarvisTrace(input: Omit<JarvisTraceEvent, "schema" | "at" | "monotonicMs">) {
@@ -35,6 +36,7 @@ export function recordJarvisTrace(input: Omit<JarvisTraceEvent, "schema" | "at" 
     ...(input.action ? { action: input.action.slice(0, 90) } : {}),
     ...(input.verified === true ? { verified: true } : {}),
     ...(input.outcome ? { outcome: input.outcome } : {}),
+    ...(input.openerHash ? { openerHash: input.openerHash.slice(0, 64) } : {}),
   }
   try {
     mkdirSync(dirname(path), { recursive: true })
