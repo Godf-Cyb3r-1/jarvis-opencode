@@ -8,7 +8,7 @@ test("Jarvis is registered as a primary non-developer assistant with the version
   expect(info.id).toBe(Agent.ID.make("jarvis"))
   expect(info.mode).toBe("primary")
   expect(info.system).toContain("a warm, clear and capable personal assistant")
-  expect(info.system).toContain("independent workers")
+  expect(info.system).toContain("specialized OpenCode workers")
   expect(info.permissions).toEqual(JarvisAgent.permissions)
   for (const tool of ["read", "glob", "grep", "question"]) {
     expect(Permission.evaluate(tool, "some/path", info.permissions).effect).toBe("allow")
