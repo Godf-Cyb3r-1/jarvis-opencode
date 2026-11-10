@@ -42,6 +42,7 @@ import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis
 import { planExecution } from "../jarvis/fast-path.js"
 import { actionToken, capabilityStatement, shouldRunMediaPreflight } from "../jarvis/capability-preflight.js"
 import { executeQuickAction } from "../jarvis/quick-action.js"
+import { recordJarvisTrace } from "../jarvis/performance.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -350,6 +351,10 @@ export const layer = Layer.effect(
         ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
         : ""
       const registeredTools = [...hooked.keys()]
+      if (jarvisRequest && kind === "primary")
+        recordJarvisTrace({ phase: "t_intent", sessionID: String(session.id), intent: planExecution(lastUserText).complexity })
+      if (jarvisRequest && kind === "primary" && registeredTools.some((tool) => ["session_create", "jarvis_quick_action", "instabox_status"].includes(tool)))
+        recordJarvisTrace({ phase: "t_route_available", sessionID: String(session.id) })
       if (jarvisRequest && kind === "primary") {
         system.push(SystemPart.make(capabilityStatement(registeredTools)))
         // A model that responds without calling tools cannot complete a simple
@@ -371,6 +376,7 @@ export const layer = Layer.effect(
             result = yield* Effect.promise(async () => {
               try {
                 const opened = await executeQuickAction(lastUserText)
+                recordJarvisTrace({ phase: "t_action_launched", sessionID: String(session.id), action: opened.kind })
                 return opened.detail
               } catch (error) {
                 return "Desktop quick action did not succeed: " + String(error)
