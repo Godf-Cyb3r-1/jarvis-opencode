@@ -1,13 +1,13 @@
 # Jarvis Windows V3 — built-in Windows-MCP test
 
-Source: https://github.com/cursortouch/windows-mcp (MIT; distributed version **0.8.8**).
+Source: https://github.com/cursortouch/windows-mcp (MIT; pinned source commit `59e3b194799d5a1ced14298bca4cd200f7edbfd8`).
 This branch is **Windows graphical GUI only**. It is based on the latest V3 GUI
 plus the instrumentation work in PR #27. No Android/Linux build changes.
 
 ## Built-in, no separate user setup
 
 The release workflow installs Windows Python 3.14 and the pinned Windows-MCP
-package at **build time**, then copies the entire Python runtime and installed
+source package at **build time**, then copies the entire Python runtime and installed
 site-packages into the Electron resources directory:
 
 ```
@@ -32,7 +32,7 @@ raw MCP control, or file editing). `session_create` injects actual connected
 Windows-MCP tool names into the worker instructions. The worker can use the
 real registered tools and check UI state after acting.
 
-The experimental build version is `2.2.5-windowsmcp.1`, to avoid adopting an
+The experimental build version is `2.2.5-windowsmcp.2`, to avoid adopting an
 old `2.2.5` background service lacking this integration. Exit the old app
 before opening this build.
 
