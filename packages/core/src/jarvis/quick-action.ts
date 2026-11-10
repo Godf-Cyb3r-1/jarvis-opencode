@@ -7,6 +7,9 @@ import { planQuickAction } from "./fast-path.js"
 export async function executeQuickAction(input: string): Promise<{ kind: string; url: string; detail: string }> {
   const action = planQuickAction(input)
   if (!action) throw new Error("No verified fast action for this request; delegate to an appropriate worker")
+  // Headless Instabox servers do not have a human-visible default browser.
+  if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
+    throw new Error("No graphical desktop is available. Use a connected local browser/media worker instead.")
   const program = process.platform === "win32" ? "explorer.exe" : "xdg-open"
   if (process.platform !== "win32" && process.platform !== "linux")
     throw new Error("Direct browser launching is supported on Windows/Linux only")
@@ -20,7 +23,7 @@ export async function executeQuickAction(input: string): Promise<{ kind: string;
     kind: action.kind,
     url: action.url,
     detail: action.kind === "youtube-search"
-      ? "Opened YouTube search in the default browser. Playback has NOT been confirmed; use a browser/media worker if automatic play is required."
-      : "Opened the requested page in the default browser; page readiness has not been confirmed.",
+      ? "Sent YouTube search to the default browser. Browser readiness and playback have NOT been confirmed; use a browser/media worker if automatic play is required."
+      : "Sent the page to the default browser; successful navigation has not been confirmed.",
   }
 }
