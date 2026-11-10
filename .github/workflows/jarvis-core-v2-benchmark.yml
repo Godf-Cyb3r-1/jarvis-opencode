@@ -32,6 +32,8 @@ jobs:
         run: bun run --cwd packages/core typecheck
       - name: Jarvis core tests
         run: cd packages/core && bun test src/jarvis/
+      - name: Check trace evaluator on explicitly synthetic fixture
+        run: bun run jarvis/benchmarks/evaluate-live-traces.ts jarvis/benchmarks/fixtures/synthetic-trace.jsonl artifacts/trace-evaluator-smoke.json
       - name: Run baseline on real OS runner
         env:
           JARVIS_BENCH_OUTPUT: artifacts/jarvis-core-v2-baseline.json
@@ -39,5 +41,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: jarvis-core-v2-baseline-${{ matrix.os }}
-          path: artifacts/jarvis-core-v2-baseline.json
+          path: artifacts/*.json
           if-no-files-found: error
