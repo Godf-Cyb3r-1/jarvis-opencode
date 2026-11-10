@@ -4,8 +4,8 @@ const persona = definition().system ?? ""
 test("V3 persona is loaded and does not require an artificial prefix", () => {
   expect(persona).toContain("JARVIS_PERSONA_VERSION_UNIVERSAL_V3")
   expect(persona).toContain("Most replies should contain zero tags")
-  expect(persona).toContain("not an automatic response to")
-  expect(persona).toContain("situation")
+  expect(persona).toContain("NOT an automatic response to")
+  expect(persona).toContain("situational")
 })
 test("Jarvis has full operational awareness, not fictional human abilities", () => {
   expect(persona).toContain("first check whether you or a worker can act")
