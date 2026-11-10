@@ -9,11 +9,11 @@ test("thirteen recognized OmniVoice cues are present", () => {
   }
 })
 
-test("allows at most one cue, only at the beginning", () => {
+test("allows one optional cue anywhere, but hides it in graphical text", () => {
   const result = normalizeJarvisText("[sigh] Ayyo, what a day. [laughter]")
-  expect(result.text).toBe("[sigh] Ayyo, what a day.")
+  expect(result.text).toBe("Ayyo, what a day.")
   expect(result.removed).toContain("[laughter]")
-  expect(normalizeJarvisText("That is funny [laughter]").accepted).toBeUndefined()
+  expect(normalizeJarvisText("That is funny [laughter]").accepted).toBe("[laughter]")
   const next = normalizeJarvisText("[laughter] Nice!", { alreadyUsed: true })
   expect(next.accepted).toBeUndefined()
 })
@@ -37,7 +37,7 @@ test("keeps commands, code and links exact", () => {
 
 test("removes unsupported cues and timestamps without destroying user data", () => {
   const result = normalizeJarvisText("[5:51 PM] [confirmation-en] Seri. [smile]")
-  expect(result.text).toBe("[confirmation-en] Seri.")
+  expect(result.text).toBe("Seri.")
   expect(result.removed).toEqual(["[5:51 PM]", "[smile]"])
   expect(normalizeJarvisText("The example is `[5:51 PM]`.").text).toBe("The example is `[5:51 PM]`.")
 })
