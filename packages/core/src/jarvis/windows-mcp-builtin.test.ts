@@ -17,6 +17,7 @@ test("packaged Windows MCP runs with offline Python and protected desktop contro
   expect(config.command[0]).toBe(path.join(home, "python", "python.exe"))
   expect(config.command).toContain("stdio")
   expect(config.command).toContain("PowerShell,Registry")
+  expect(config.command).toContain("balanced")
   expect(config.command).not.toContain("--no-control")
   expect(config.codemode).toBe(false)
 })
