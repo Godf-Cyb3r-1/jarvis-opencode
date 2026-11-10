@@ -16,7 +16,7 @@ jobs:
     env:
       OPENCODE_VERSION: '2.2.5'
       OPENCODE_CHANNEL: latest
-      OPENCODE_TARGET: linux-x64-baseline
+      OPENCODE_TARGET: linux-x64
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -29,6 +29,8 @@ jobs:
       - name: Core typecheck
         run: bun run --cwd packages/core typecheck
       - name: Compile Linux Jarvis engine
+        env:
+          OPENCODE_TARGET: linux-x64-baseline
         run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
       - name: Build graphical renderer
         run: bun run --cwd packages/desktop script/build.ts
