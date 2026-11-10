@@ -5,7 +5,9 @@ export type QuickAction =
   | { kind: "youtube-search"; query: string; url: string; result: "search-opened" }
   | { kind: "open-url"; url: string; result: "page-opened" }
 
-const media = /^(?:(?:hey|hi)\s+jarvis[,\s]*)?(?:can you\s+|could you\s+|please\s+)?(?:play|put on|find and play)\s+(.+?)(?:\s+(?:for me|please))?[.!?]*$/i
+const media = /^(?:(?:hey|hi)\s+jarvis[,\s]*)?(?:can you\s+|could you\s+|please\s+)?(?:play|put on|find and play)\s+(.+?)\s*[.!?]*$/i
+const genericSong = /^(?:a|some|any|one)\s+(?:tamil\s+)?(?:song|songs|music)(?:\s+for\s+me)?(?:\s*[.,!?]+\s*(?:you know what i like|surprise me|something i(?:'d| would) like))?[.!?]*$/i
+
 const urlRequest = /^(?:(?:hey|hi)\s+jarvis[,\s]*)?(?:can you\s+|could you\s+|please\s+)?open\s+(https:\/\/[^\s]+)[.!?]*$/i
 
 export function planQuickAction(input: string): QuickAction | undefined {
@@ -24,12 +26,13 @@ export function planQuickAction(input: string): QuickAction | undefined {
     } catch { return }
   }
   const found = text.match(media)?.[1]?.trim()
-  if (!found || found.length > 130) return
-  // Don't fast-open potentially unrelated actions. No fake player control or
-  // choosing a song without a supported browser/media automation provider.
-  if (!/\b(song|songs|music|track|video|youtube|paattu|pattu|பாடல்|தமிழ்)\b/i.test(found) &&
-      !/tamil|தமிழ்/i.test(found)) return
-  const query = found
+  if (!found || found.length > 130 || /[;|<>]/.test(found)) return
+  // User may refer to taste without having a verified saved music preference.
+  // Prefer a broad Tamil music search over inventing a favourite track.
+  const generic = genericSong.test(found)
+  // Don't fast-open unrelated actions, command snippets or shell-like requests.
+  if (!generic && !/\b(song|songs|music|track|video|youtube|paattu|pattu)\b|பாடல்|தமிழ்|tamil/i.test(found)) return
+  const query = generic ? "Tamil songs" : found
     .replace(/\s+(?:on youtube|in youtube|on youtube music)$/i, "")
     .replace(/\s+/g, " ")
     .trim()
