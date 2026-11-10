@@ -18,6 +18,7 @@ import { Skill } from "../skill.js"
 import { SessionBlob } from "./blob.js"
 import { AttachmentError, SkillNotFoundError } from "./error.js"
 import { SessionStored } from "./stored.js"
+import { recordJarvisTrace } from "../jarvis/performance.js"
 
 // Image types the resizer can decode; others such as HEIC and AVIF go to the provider unchanged.
 const RESIZABLE_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"])
@@ -36,6 +37,8 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
   messageID: SessionMessage.ID
   input: Input
 }) {
+  if (request.session.agent === "jarvis")
+    recordJarvisTrace({ phase: "t_msg", sessionID: String(request.session.id) })
   const fs = yield* FSUtil.Service
   yield* Plugin.awaitActivation
   const hooks = yield* PluginHooks.Service
