@@ -39,6 +39,7 @@ import { SessionStore } from "./store.js"
 import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { itemsOf } from "../jarvis/memory.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis/cloud-memory.js"
+import { planExecution } from "../jarvis/fast-path.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -340,6 +341,22 @@ export const layer = Layer.effect(
       // date/environment context: hooks may replace the whole system array,
       // but the free gateway still needs the environment block.
       const system = canonicalSystem(input.agent, shaped.system, input.system)
+      // Jarvis evaluates work complexity per user turn, without altering
+      // provider-selected model capabilities. The worker tool may pick an
+      // actually advertised reasoning variant separately.
+      if (jarvisRequest && kind === "primary") {
+        const latest = [...input.messages].reverse().find((message) => message.role === "user")
+        const requestText = latest && latest.role === "user"
+          ? latest.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
+          : ""
+        const plan = planExecution(requestText)
+        system.push(SystemPart.make(
+          "[Jarvis runtime execution guidance: " + plan.complexity +
+          " reasoning depth, " + plan.budgetSeconds +
+          " second SOFT worker progress checkpoint; " + plan.reason +
+          ". Use fast direct actions when safe, verify outcomes; never invent model thinking settings or cancel work at the checkpoint.]",
+        ))
+      }
       // Model-request memory runs only for the actual conversational Jarvis
       // turn. Read exclusively from pre-hook user messages: tools and plugins
       // may insert synthetic text, which must never become a personal memory.
