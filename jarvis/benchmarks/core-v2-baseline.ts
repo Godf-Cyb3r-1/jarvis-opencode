@@ -5,7 +5,7 @@
  * time as action launch time or synthesized replies as real user conversations.
  */
 import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname } from "node:path"
 import { planQuickAction, planExecution } from "../../packages/core/src/jarvis/fast-path"
 import { normalizeJarvisText } from "../../packages/core/src/jarvis/expression-policy"
 
@@ -80,6 +80,6 @@ const report = {
   runtimeAcceptance:{windowsInteractive:null,linuxInteractive:null,realReplyRefusalRate:null,workerContinuity:null,successClaimEvidence:null},
 }
 const output=process.env.JARVIS_BENCH_OUTPUT??"artifacts/jarvis-core-v2-baseline.json"
-await mkdir(join(output,".."),{recursive:true})
+await mkdir(dirname(output),{recursive:true})
 await Bun.write(output,JSON.stringify(report,null,2)+"\n")
 console.log(JSON.stringify(report,null,2))
