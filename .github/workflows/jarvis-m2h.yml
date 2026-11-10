@@ -1,7 +1,7 @@
 name: Jarvis M2H prompt precedence and timestamp regression
 on:
   push:
-    branches: ['fix/jarvis-prompt-precedence-timestamps']
+    branches: ['fix/jarvis-prompt-precedence-timestamps', 'fix/jarvis-capability-first-worker-routing-20261110']
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,8 +46,33 @@ jobs:
           jq -e 'any(.id == "jarvis" and .mode == "primary" and ((.system // "") | contains("JARVIS_PERSONA_VERSION_M2H")))' /tmp/jarvis-agents.json
           (cd artifact && sha256sum jarvis-opencode-linux-x64 > SHA256SUMS)
           printf 'Jarvis 0.2.0-dev.8 M2H; pinned persona marker, stripped clock prefixes, prompt-hook precedence fix, no sound output.\n' > artifact/BUILD_STATUS.txt
+      - name: Verify capability-first routing in compiled Linux persona
+        run: |
+          grep -q 'capability_discover' jarvis/persona.md
+          jq -e 'any(.id == "jarvis" and ((.system // "") | contains("capability_discover")))' /tmp/jarvis-agents.json
+      - name: Cross-compile Windows x64 executable
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: windows-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Package Windows executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=$(find packages/cli/dist -type f -path '*/bin/opencode.exe' | head -1)
+          test -n "$binary"
+          mkdir -p artifact-win
+          cp "$binary" artifact-win/jarvis-opencode-windows-x64.exe
+          (cd artifact-win && sha256sum jarvis-opencode-windows-x64.exe > SHA256SUMS)
+          printf 'Jarvis capability-first Windows x64 cross-compiled; native Windows runtime verification pending.\\n' > artifact-win/BUILD_STATUS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-m2h-linux-x64
+          name: jarvis-capability-windows-x64
+          path: artifact-win/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-capability-linux-x64
           path: artifact/
           if-no-files-found: error
