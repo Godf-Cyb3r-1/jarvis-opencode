@@ -31,7 +31,7 @@ jobs:
       - name: Core typecheck
         run: bun run --cwd packages/core typecheck
       - name: Jarvis core tests
-        run: bun test packages/core/src/jarvis/
+        run: cd packages/core && bun test src/jarvis/
       - name: Run baseline on real OS runner
         env:
           JARVIS_BENCH_OUTPUT: artifacts/jarvis-core-v2-baseline.json
