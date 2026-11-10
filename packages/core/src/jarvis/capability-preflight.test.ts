@@ -4,7 +4,7 @@ test("Jarvis knows verified actions before guessing it cannot act", () => {
   const text = capabilityStatement([...actionableTools])
   expect(text).toContain("Desktop browser launch/search is available")
   expect(text).toContain("Independent worker delegation is available")
-  expect(text).toContain("never claim they succeeded before evidence")
+  expect(text).toContain("never claim success without evidence")
 })
 test("media action only on explicit primary Jarvis request with registered tool", () => {
   const request = "can you play a song for me.. you know what i like"
