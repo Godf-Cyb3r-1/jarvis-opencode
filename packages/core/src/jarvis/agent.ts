@@ -44,6 +44,8 @@ export const definition = (): Agent.Info => ({
   id: ID,
   name: Agent.Name.make("Jarvis"),
   mode: "primary",
+  // Controller only: workers continue independently without this turn budget.
+  steps: 8,
   // Omitted model follows the same configured/default OpenCode selection
   // as the working stock agent. Never force the limited -free route.
   ...(process.env.JARVIS_BRAIN_MODEL?.trim()
