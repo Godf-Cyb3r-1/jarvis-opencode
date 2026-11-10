@@ -14,10 +14,22 @@ export function capabilityStatement(toolNames: readonly string[]): string {
   const workers = tools.has("session_create")
     ? "Independent worker delegation is available through session_create; check a capable worker before refusing."
     : "Worker delegation is not registered for this request."
+  const remote = tools.has("instabox_status")
+    ? "Instabox remote readiness can be checked with instabox_status; remote execution needs a worker with instabox_exec and active credentials."
+    : "Instabox readiness is not available in this request."
+  const inspect = tools.has("read") || tools.has("glob") || tools.has("grep")
+    ? "Project inspection tools are available for local information."
+    : "Project inspection tools are not registered here."
+  const memory = tools.has("memory_find")
+    ? "Saved personal preferences can be retrieved using memory_find; do not invent preferences that were never stored."
+    : "Saved-preference retrieval is not registered here."
   return [
     "[Verified Jarvis execution capabilities]",
     action,
     workers,
+    remote,
+    inspect,
+    memory,
     "Never infer you have no speaker/player merely because you are a language model.",
     "Tools and workers are your means of acting, but never claim they succeeded before evidence.",
     "For explicit media requests, execute an available action or delegate; don't stop at suggesting a link.",
