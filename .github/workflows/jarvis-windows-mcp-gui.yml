@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     env:
-      OPENCODE_VERSION: '2.2.5-windowsmcp.3'
+      OPENCODE_VERSION: '2.2.5-windowsmcp.4'
       OPENCODE_CHANNEL: latest
       JARVIS_WINDOWS_MCP_BUNDLE: '1'
     steps:
@@ -74,6 +74,11 @@ jobs:
         env:
           OPENCODE_TARGET: windows-x64
         run: bun run --cwd packages/desktop script/pack.ts
+      - name: Install Wine for Windows NSIS resource processing
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wine64 wine
+          command -v wine
       - name: Produce one integrated Windows installer
         env:
           OPENCODE_TARGET: windows-x64
