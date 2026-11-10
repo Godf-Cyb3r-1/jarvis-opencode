@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: write
 jobs:
   stage-windows-mcp:
     runs-on: windows-2025
@@ -42,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     env:
-      OPENCODE_VERSION: '2.2.5-windowsmcp.2'
+      OPENCODE_VERSION: '2.2.5-windowsmcp.3'
       OPENCODE_CHANNEL: latest
       JARVIS_WINDOWS_MCP_BUNDLE: '1'
     steps:
@@ -73,6 +74,24 @@ jobs:
         env:
           OPENCODE_TARGET: windows-x64
         run: bun run --cwd packages/desktop script/pack.ts
+      - name: Produce one integrated Windows installer
+        env:
+          OPENCODE_TARGET: windows-x64
+        run: |
+          cd packages/desktop
+          bunx electron-builder --win nsis --x64 --prepackaged ../../dist/desktop/app --publish never --config electron-builder.config.ts
+      - name: Verify one installer contains bundled Windows-MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/desktop/app/resources/windows-mcp/python/python.exe
+          test -s dist/desktop/app/resources/windows-mcp/site-packages/windows_mcp/__main__.py
+          installer=$(find packages/desktop/dist -maxdepth 1 -type f -iname '*.exe' | head -1)
+          test -n "$installer"
+          file "$installer" | grep -E 'PE32|PE32+'
+          mkdir -p artifacts
+          cp "$installer" artifacts/Jarvis-Windows-Integrated-Setup-x64.exe
+          (cd artifacts && sha256sum Jarvis-Windows-Integrated-Setup-x64.exe > SHA256SUMS)
       - name: Verify executable, MCP Python, bootstrap and tool package
         shell: bash
         run: |
@@ -86,11 +105,18 @@ jobs:
           file "$root/opencode-cli.exe" | grep -E 'PE32|PE32+'
           file "$root/windows-mcp/python/python.exe" | grep -E 'PE32|PE32+'
           test -n "$(find dist/desktop/app -maxdepth 1 -name '*.exe' | head -1)"
-          mkdir -p artifacts
-          (cd dist/desktop && zip -qr ../../artifacts/Jarvis-Windows-GUI-WindowsMCP-x64.zip app)
-          (cd artifacts && sha256sum Jarvis-Windows-GUI-WindowsMCP-x64.zip > SHA256SUMS)
+          test -s artifacts/Jarvis-Windows-Integrated-Setup-x64.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: jarvis-windows-gui-builtin-windows-mcp
+          name: Jarvis-Windows-Integrated-Installer
           path: artifacts/
           if-no-files-found: error
+      - name: Remove CI-only Windows-MCP staging artifact
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" --jq '.artifacts[] | select(.name == "jarvis-windows-mcp-runtime") | .id' | while read -r id; do
+            gh api --method DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+          done
