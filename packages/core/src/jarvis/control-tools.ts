@@ -5,6 +5,8 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import { DateTime, Effect, Schema, Semaphore } from "effect"
 import { Agent } from "../agent.js"
 import { Model } from "../model.js"
+import { Mcp } from "../mcp/index.js"
+import { WINDOWS_MCP_SERVER } from "./windows-mcp-builtin.js"
 import { KV } from "../kv.js"
 import { Model as ModelSchema } from "@opencode/schema/model"
 import { Session } from "../session.js"
@@ -45,6 +47,7 @@ export const Plugin = {
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
     const models = yield* Model.Service
+    const mcp = yield* Mcp.Service
     const kv = yield* KV.Service
     const loadMemory = Effect.fn("Jarvis.CloudMemory.load")(function* (projectID: string) {
       const key = "jarvis:memory:project:" + projectID
@@ -328,9 +331,30 @@ export const Plugin = {
           models: Schema.Array(Schema.Struct({ providerID: Schema.String, modelID: Schema.String })),
           activeWorkers: Schema.Number,
           queuedWorkers: Schema.Number,
+          desktop: Schema.Struct({
+            status: Schema.String,
+            tools: Schema.Array(Schema.String),
+            detail: Schema.String,
+          }),
         }),
         execute: (_, context) => Effect.gen(function* () {
           yield* authorize(context.sessionID, context.agent)
+          // Live inventory, not a hard-coded claim that the MCP server is ready.
+          yield* mcp.awaitStartup()
+          const servers = yield* mcp.servers()
+          const desktop = servers.find((server) => server.name === WINDOWS_MCP_SERVER)
+          const desktopTools = desktop?.status.status === "connected"
+            ? (yield* mcp.tools()).filter((tool) => tool.server === WINDOWS_MCP_SERVER).map((tool) => tool.name)
+            : []
+          const desktopState = {
+            status: desktop?.status.status ?? "not-installed",
+            tools: desktopTools,
+            detail: desktop?.status.status === "failed" || desktop?.status.status === "needs_auth"
+              ? desktop.status.error
+              : desktop?.status.status === "connected"
+                ? "Windows-MCP desktop controls registered and discoverable by workers"
+                : "Windows-MCP server is not connected; check bundled runtime or /mcps",
+          }
           const workers = (yield* agents.list())
             .filter((candidate) => candidate.id !== JarvisAgent.ID)
             .map((candidate) => ({ id: String(candidate.id), description: candidate.description ?? "" }))
@@ -340,11 +364,14 @@ export const Plugin = {
             models: available.map((model) => ({ providerID: String(model.providerID), modelID: String(model.id) })),
             activeWorkers: scheduler.runningCount,
             queuedWorkers: scheduler.queuedCount,
+            desktop: desktopState,
           }
         }).pipe(
           Effect.map((output) => ({
             output,
-            content: "Available workers: " + (output.workers.map((worker) => worker.id + ": " + worker.description).join("; ") || "none")
+            content: "Windows desktop: " + output.desktop.status + " (" + output.desktop.detail + ")"
+              + "\nWindows-MCP tools: " + (output.desktop.tools.join(", ") || "none registered")
+              + "\nAvailable workers: " + (output.workers.map((worker) => worker.id + ": " + worker.description).join("; ") || "none")
               + "\nAvailable models: " + output.models.map((model) => model.providerID + "/" + model.modelID).join(", ")
               + "\nWorker slots: " + output.activeWorkers + " running, " + output.queuedWorkers + " queued",
           })),
@@ -414,6 +441,10 @@ export const Plugin = {
             if (!selected.info)
               return yield* new ToolFailure({ message: "Requested worker agent is unavailable." })
             const plan = planExecution(input.instruction)
+            const desktopServer = (yield* mcp.servers()).find((server) => server.name === WINDOWS_MCP_SERVER)
+            const desktopTools = desktopServer?.status.status === "connected"
+              ? (yield* mcp.tools()).filter((tool) => tool.server === WINDOWS_MCP_SERVER).map((tool) => tool.name)
+              : []
             let workerModel: ModelSchema.Ref | undefined
             if (input.model) {
               const available = yield* models.available()
@@ -462,6 +493,18 @@ export const Plugin = {
                   "Start with the smallest concrete action. Verify results, avoid unnecessary exploration.",
                   "If work extends past the checkpoint, keep working and report verified progress.",
                   "Never claim an action occurred until it is observed. Confirm before irreversible or third-party actions.",
+                  ...(desktopTools.length ? [
+                    "",
+                    "[Local Windows desktop body]",
+                    "A real Windows-MCP server is CONNECTED in this host environment.",
+                    "Available MCP tools: " + desktopTools.join(", "),
+                    "These are your desktop eyes and hands; use the actual registered Windows-MCP tools for Windows app and UI tasks.",
+                    "Respect the upstream desktop-control consent gate and user input. Use State/Snapshot/Screenshot tools when available for verified outcomes.",
+                    "Prefer a short direct sequence; do not spin on identical calls, or claim a screen action worked without evidence.",
+                  ] : [
+                    "[Local Windows desktop body]",
+                    "No connected Windows-MCP server was observed for this worker. Do not invent Windows control tools.",
+                  ]),
                 ].join("\n"),
               },
             })
