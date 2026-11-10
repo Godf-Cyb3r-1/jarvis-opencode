@@ -18,6 +18,8 @@ export const permissions = [
   { action: "agent_list", resource: "*", effect: "allow" },
   { action: "instabox_status", resource: "*", effect: "allow" },
   { action: "model_list", resource: "*", effect: "allow" },
+  { action: "jarvis_plan", resource: "*", effect: "allow" },
+  { action: "jarvis_quick_action", resource: "*", effect: "allow" },
   { action: "session_create", resource: "*", effect: "allow" },
   { action: "session_status", resource: "*", effect: "allow" },
   { action: "session_list", resource: "*", effect: "allow" },

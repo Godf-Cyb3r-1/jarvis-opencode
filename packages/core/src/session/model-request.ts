@@ -39,6 +39,9 @@ import { SessionStore } from "./store.js"
 import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { itemsOf } from "../jarvis/memory.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis/cloud-memory.js"
+import { planExecution } from "../jarvis/fast-path.js"
+import { actionToken, capabilityStatement, shouldRunMediaPreflight } from "../jarvis/capability-preflight.js"
+import { executeQuickAction } from "../jarvis/quick-action.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -340,6 +343,62 @@ export const layer = Layer.effect(
       // date/environment context: hooks may replace the whole system array,
       // but the free gateway still needs the environment block.
       const system = canonicalSystem(input.agent, shaped.system, input.system)
+      // Ground Jarvis in what the CURRENT authenticated request can actually do.
+      // A model must never infer "no player/tools" from its own lack of a body.
+      const lastUser = [...input.messages].reverse().find((message) => message.role === "user")
+      const lastUserText = lastUser && lastUser.role === "user"
+        ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
+        : ""
+      const registeredTools = [...hooked.keys()]
+      if (jarvisRequest && kind === "primary") {
+        system.push(SystemPart.make(capabilityStatement(registeredTools)))
+        // A model that responds without calling tools cannot complete a simple
+        // direct action. Execute strictly allowlisted explicit media requests
+        // before generating the answer, with a durable per-turn idempotency key.
+        if (Option.isSome(kvOption) && shouldRunMediaPreflight({
+          kind, agent: String(input.agent), text: lastUserText, toolNames: registeredTools,
+        })) {
+          const key = actionToken(
+            String(session.id),
+            input.messages.filter((message) => message.role === "user").length,
+            lastUserText,
+          )
+          const kv = kvOption.value
+          let result = yield* kv.get(key)
+          if (typeof result !== "string") {
+            // A retry or crash must not launch the same browser action again.
+            yield* kv.set(key, "The action was attempted but no result was confirmed.")
+            result = yield* Effect.promise(async () => {
+              try {
+                const opened = await executeQuickAction(lastUserText)
+                return opened.detail
+              } catch (error) {
+                return "Desktop quick action did not succeed: " + String(error)
+              }
+            })
+            yield* kv.set(key, result)
+          }
+          system.push(SystemPart.make(
+            "[Actual media preflight result, never reinterpret or fabricate: " + result + "]",
+          ))
+        }
+      }
+      // Jarvis evaluates work complexity per user turn, without altering
+      // provider-selected model capabilities. The worker tool may pick an
+      // actually advertised reasoning variant separately.
+      if (jarvisRequest && kind === "primary") {
+        const latest = [...input.messages].reverse().find((message) => message.role === "user")
+        const requestText = latest && latest.role === "user"
+          ? latest.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
+          : ""
+        const plan = planExecution(requestText)
+        system.push(SystemPart.make(
+          "[Jarvis runtime execution guidance: " + plan.complexity +
+          " reasoning depth, " + plan.budgetSeconds +
+          " second SOFT worker progress checkpoint; " + plan.reason +
+          ". Use fast direct actions when safe, verify outcomes; never invent model thinking settings or cancel work at the checkpoint.]",
+        ))
+      }
       // Model-request memory runs only for the actual conversational Jarvis
       // turn. Read exclusively from pre-hook user messages: tools and plugins
       // may insert synthetic text, which must never become a personal memory.

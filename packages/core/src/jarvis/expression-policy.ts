@@ -1,5 +1,5 @@
 /**
- * Canonical Jarvis speech output policy. Applied to completed assistant text,
+ * Canonical Jarvis visible-text policy. Applied to completed assistant text,
  * never to tool arguments, worker messages, or reasoning. Technical content
  * is protected from transformations that would make commands unusable.
  */
@@ -71,14 +71,12 @@ export function normalizeJarvisText(
         removed.push(match)
         return ""
       }
-      // Speech cues are only valid at the start of the reply, not mid-sentence.
-      if (source.slice(0, source.indexOf(match)).replace(clock, "").trim() !== "") {
-        removed.push(match)
-        return ""
-      }
+      // Optional expressive cue can appear near the appropriate phrase.
+      // Its placement is performance metadata; never expose the bracket
+      // marker in the user-facing graphical transcript.
       used = true
       accepted = "[" + lower + "]"
-      return accepted
+      return ""
     })
     if (!technical) prose = cleanSpeech(prose)
     return prose

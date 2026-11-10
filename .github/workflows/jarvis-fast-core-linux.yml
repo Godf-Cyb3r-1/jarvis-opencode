@@ -1,0 +1,47 @@
+name: Jarvis fast core Linux and tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/jarvis-core-fastpath-adaptive-reasoning, fix/jarvis-action-awareness-and-expression-rendering]
+    paths:
+      - 'jarvis/persona.md'
+      - 'packages/core/src/jarvis/**'
+      - 'packages/core/src/session/**'
+      - '.github/workflows/jarvis-fast-core-linux.yml'
+permissions:
+  contents: read
+jobs:
+  linux-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - run: bun install --frozen-lockfile
+      - name: Unit tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: Core typecheck
+        run: bun run --cwd packages/core typecheck
+      - name: Linux standalone CLI
+        env:
+          OPENCODE_VERSION: '2.2.5'
+          OPENCODE_CHANNEL: latest
+          OPENCODE_TARGET: linux-x64
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cli=$(find packages/cli/dist -type f -path '*/bin/opencode' | head -1)
+          test -n "$cli"
+          cp "$cli" artifacts/jarvis-linux-x64
+          chmod +x artifacts/jarvis-linux-x64
+          artifacts/jarvis-linux-x64 --version
+          (cd artifacts && sha256sum jarvis-linux-x64 > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-fast-core-linux-x64
+          path: artifacts/
+          if-no-files-found: error
