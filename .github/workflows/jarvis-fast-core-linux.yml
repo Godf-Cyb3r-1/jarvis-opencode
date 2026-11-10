@@ -2,7 +2,7 @@ name: Jarvis fast core Linux and tests
 on:
   workflow_dispatch:
   push:
-    branches: [feature/jarvis-core-fastpath-adaptive-reasoning]
+    branches: [feature/jarvis-core-fastpath-adaptive-reasoning, fix/jarvis-action-awareness-and-expression-rendering]
     paths:
       - 'jarvis/persona.md'
       - 'packages/core/src/jarvis/**'
