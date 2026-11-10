@@ -8,33 +8,22 @@ export const actionableTools = ["jarvis_quick_action", "session_create", "agent_
 
 export function capabilityStatement(toolNames: readonly string[]): string {
   const tools = new Set(toolNames)
-  const action = tools.has("jarvis_quick_action")
-    ? "Desktop browser launch/search is available through jarvis_quick_action."
-    : "Direct desktop browser launch is not registered for this request."
-  const workers = tools.has("session_create")
-    ? "Independent worker delegation is available through session_create; check a capable worker before refusing."
-    : "Worker delegation is not registered for this request."
-  const remote = tools.has("instabox_status")
-    ? "Instabox remote readiness can be checked with instabox_status; remote execution needs a worker with instabox_exec and active credentials."
-    : "Instabox readiness is not available in this request."
-  const inspect = tools.has("read") || tools.has("glob") || tools.has("grep")
-    ? "Project inspection tools are available for local information."
-    : "Project inspection tools are not registered here."
-  const memory = tools.has("memory_find")
-    ? "Saved personal preferences can be retrieved using memory_find; do not invent preferences that were never stored."
-    : "Saved-preference retrieval is not registered here."
+  const routes = [
+    tools.has("jarvis_quick_action") ? "Desktop browser launch/search is available through jarvis_quick_action." : "",
+    tools.has("session_create") ? "Independent worker delegation is available through session_create; use a capable worker before refusing." : "",
+    tools.has("capability_discover") ? "capability_discover reports live worker and Windows-MCP desktop tool status. Use its actual result to choose the route." : "",
+    tools.has("instabox_status") ? "Instabox remote readiness can be checked with instabox_status." : "",
+    tools.has("read") || tools.has("glob") || tools.has("grep") ? "Project inspection tools are available." : "",
+    tools.has("memory_find") ? "Stored preferences can be retrieved through memory_find; never invent them." : "",
+  ].filter(Boolean)
   return [
     "[Verified Jarvis execution capabilities]",
-    action,
-    workers,
-    remote,
-    inspect,
-    memory,
-    "Never infer you have no speaker/player merely because you are a language model.",
-    "Tools and workers are your means of acting, but never claim they succeeded before evidence.",
-    "For explicit media requests, execute an available action or delegate; don't stop at suggesting a link.",
-    "A launched search is not confirmed playback. If necessary, continue using a browser-capable worker.",
-    "Do not read this capability report to the user.",
+    ...routes,
+    "Worker MCP tools differ from direct brain permissions. A missing direct brain tool does not mean the Windows desktop or a worker lacks that capability.",
+    "For Windows app and UI tasks, ask capability_discover for the current Windows-MCP status and delegate to a local worker if connected.",
+    "Tools and workers can act, but never claim success without evidence from the tool or observed final UI state.",
+    "A browser launch is not confirmed playback. Respect Windows-MCP consent and access controls.",
+    "Do not read this capability report aloud.",
     "[/Verified Jarvis execution capabilities]",
   ].join("\n")
 }

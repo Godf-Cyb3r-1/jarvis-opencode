@@ -107,6 +107,10 @@ const getBase = (appId: string): Configuration => {
         to: "",
         filter: ["opencode-cli", "opencode-cli.exe", "opencode-cli.version"],
       },
+      // Only the dedicated Jarvis Windows test build includes desktop control.
+      ...(target.os === "win32" && process.env.JARVIS_WINDOWS_MCP_BUNDLE === "1"
+        ? [{ from: "resources/windows-mcp", to: "windows-mcp", filter: ["**/*"] }]
+        : []),
     ],
     afterPack: async (context) => {
       const arch = Arch[context.arch]

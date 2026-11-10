@@ -1,5 +1,7 @@
 // Imported first so its evaluation stamps the moment Electron handed control to this module.
 import { marks } from "./lifecycle/marks"
+import { existsSync } from "node:fs"
+import path from "node:path"
 import { app } from "electron"
 import { acquireApplicationLock, configureApplication } from "./lifecycle/configure"
 import { startSidecarProbe } from "./service/sidecar-probe"
@@ -13,6 +15,16 @@ import { registerRendererScheme } from "./windows/scheme"
 // hundred milliseconds of module evaluation and layers — loads. Configuration and the scheme must
 // precede ready; the window is created the moment ready fires; everything else is imported after.
 configureApplication()
+
+// The packaged Windows-MCP server is a real offline dependency. Expose its
+// resource directory to the sidecar BEFORE it starts, not as a UI-only toggle.
+if (process.platform === "win32" && app.isPackaged) {
+  const home = path.join(process.resourcesPath, "windows-mcp")
+  if (existsSync(path.join(home, "python", "python.exe")) &&
+      existsSync(path.join(home, "bootstrap.py")) &&
+      existsSync(path.join(home, "site-packages", "windows_mcp", "__main__.py")))
+    process.env.JARVIS_WINDOWS_MCP_HOME = home
+}
 
 if (acquireApplicationLock()) {
   registerRendererScheme()

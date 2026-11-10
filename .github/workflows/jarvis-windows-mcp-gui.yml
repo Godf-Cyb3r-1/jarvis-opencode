@@ -1,0 +1,165 @@
+name: Jarvis Windows V3 GUI with offline Windows-MCP
+on:
+  push:
+    branches: [feature/jarvis-windows-mcp-builtin-20261110]
+    paths:
+      - 'packages/**'
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-windows-mcp-gui.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  stage-windows-mcp:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.9.18'
+      - name: Install managed native Windows Python 3.14
+        shell: pwsh
+        run: uv python install 3.14
+      - name: Package Python runtime and pinned upstream Windows-MCP source offline
+        shell: pwsh
+        run: ./packages/desktop/script/stage-windows-mcp.ps1
+      - name: Smoke-test actual Windows-MCP stdio connection and tool catalog
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          & ./packages/desktop/resources/windows-mcp/python/python.exe ./packages/desktop/script/smoke-windows-mcp.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-windows-mcp-runtime
+          path: packages/desktop/resources/windows-mcp/
+          if-no-files-found: error
+          compression-level: 1
+
+  build-windows-gui:
+    needs: stage-windows-mcp
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      OPENCODE_VERSION: '2.2.5-windowsmcp.6'
+      OPENCODE_CHANNEL: latest
+      JARVIS_WINDOWS_MCP_BUNDLE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-windows-mcp-runtime
+          path: packages/desktop/resources/windows-mcp/
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install and test Jarvis core
+        run: |
+          bun install --frozen-lockfile
+          bun install --os="*" --cpu="*" --libc="*" @lydell/node-pty@1.2.0-beta.12
+          cd packages/core && bun test src/jarvis/
+      - name: Typecheck Jarvis core
+        run: bun run --cwd packages/core typecheck
+      - name: Compile Windows Jarvis CLI engine
+        env:
+          OPENCODE_TARGET: windows-x64-baseline
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui --skip-install
+      - name: Build Electron Windows GUI
+        env:
+          OPENCODE_TARGET: windows-x64
+        run: bun run --cwd packages/desktop script/build.ts
+      - name: Package Electron Windows GUI with Windows-MCP sidecar
+        env:
+          OPENCODE_TARGET: windows-x64
+        run: bun run --cwd packages/desktop script/pack.ts
+      - name: Verify executable, MCP Python, bootstrap and tool package
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=dist/desktop/app/resources
+          test -s "$root/opencode-cli.exe"
+          test -s "$root/windows-mcp/python/python.exe"
+          test -s "$root/windows-mcp/bootstrap.py"
+          test -s "$root/windows-mcp/site-packages/windows_mcp/__main__.py"
+          test -s "$root/windows-mcp/LICENSE.windows-mcp.txt"
+          file "$root/opencode-cli.exe" | grep -E 'PE32|PE32+'
+          file "$root/windows-mcp/python/python.exe" | grep -E 'PE32|PE32+'
+          test -n "$(find dist/desktop/app -maxdepth 1 -name '*.exe' | head -1)"
+          test -n "$(find dist/desktop/app -maxdepth 1 -name '*.exe' | head -1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-win-unpacked-ci
+          path: dist/desktop/app/
+          if-no-files-found: error
+          compression-level: 1
+
+  make-single-installer:
+    needs: build-windows-gui
+    runs-on: windows-2025
+    timeout-minutes: 65
+    env:
+      OPENCODE_VERSION: '2.2.5-windowsmcp.5'
+      OPENCODE_CHANNEL: latest
+      OPENCODE_TARGET: windows-x64
+      JARVIS_WINDOWS_MCP_BUNDLE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install packaging dependencies
+        shell: pwsh
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-win-unpacked-ci
+          path: dist/desktop/app/
+      - name: Verify packaged Windows GUI and built-in MCP
+        shell: pwsh
+        run: |
+          $root = "dist/desktop/app/resources"
+          foreach ($file in @("opencode-cli.exe", "windows-mcp/python/python.exe", "windows-mcp/bootstrap.py", "windows-mcp/site-packages/windows_mcp/__main__.py")) {
+            if (!(Test-Path (Join-Path $root $file))) { throw "Missing internal resource: $file" }
+          }
+      - name: Prepare native installer icons and metadata
+        shell: pwsh
+        run: |
+          Push-Location packages/desktop
+          bun ./script/copy-icons.ts prod
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer icon preparation failed" }
+          Pop-Location
+      - name: Create single NSIS installer on native Windows
+        shell: pwsh
+        run: |
+          Push-Location packages/desktop
+          bunx electron-builder --win nsis --x64 --prepackaged ../../dist/desktop/app --publish never --config electron-builder.config.ts
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer packaging failed" }
+          Pop-Location
+      - name: Package only the single integrated installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory artifacts -Force | Out-Null
+          $installer = Get-ChildItem "packages/desktop/dist" -Filter "*.exe" -File | Select-Object -First 1
+          if (!$installer) { throw "Installer missing" }
+          Copy-Item $installer.FullName "artifacts/Jarvis-Windows-Integrated-Setup-x64.exe"
+          $hash = (Get-FileHash "artifacts/Jarvis-Windows-Integrated-Setup-x64.exe" -Algorithm SHA256).Hash.ToLower()
+          "$hash  Jarvis-Windows-Integrated-Setup-x64.exe" | Set-Content "artifacts/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jarvis-Windows-Integrated-Installer
+          path: artifacts/
+          if-no-files-found: error
+      - name: Remove CI-only runtime and unpacked app artifacts
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $run = gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" | ConvertFrom-Json
+          foreach ($item in $run.artifacts) {
+            if ($item.name -in @("jarvis-windows-mcp-runtime", "jarvis-win-unpacked-ci")) {
+              gh api --method DELETE "repos/${{ github.repository }}/actions/artifacts/$($item.id)"
+            }
+          }

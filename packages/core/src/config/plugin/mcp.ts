@@ -6,6 +6,7 @@ import type { ServerConfig } from "@opencode/schema/mcp"
 import { Effect, Stream } from "effect"
 import { Config } from "../../config.js"
 import { Mcp } from "../../mcp/index.js"
+import { bundledWindowsMcp, WINDOWS_MCP_SERVER } from "../../jarvis/windows-mcp-builtin.js"
 
 export const Plugin = define({
   id: "opencode.config.mcp",
@@ -53,5 +54,11 @@ export const register = Effect.fn("ConfigMCPPlugin.register")(function* (
       if (editor.get(name)) continue
       editor.set(name, { ...server, timeout: { ...timeout, ...server.timeout } })
     }
+    // Built into the Windows Jarvis GUI only: the offline Python runtime is
+    // packaged as Electron extraResources and inherited by the CLI sidecar.
+    // A user-defined MCP server with this name always takes precedence.
+    const desktop = bundledWindowsMcp()
+    if (desktop && !editor.get(WINDOWS_MCP_SERVER))
+      editor.set(WINDOWS_MCP_SERVER, desktop)
   })
 })
