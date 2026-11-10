@@ -16,7 +16,7 @@ jobs:
     env:
       OPENCODE_VERSION: '2.2.5'
       OPENCODE_CHANNEL: latest
-      OPENCODE_TARGET: linux-x64
+      OPENCODE_TARGET: linux-x64-baseline
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
