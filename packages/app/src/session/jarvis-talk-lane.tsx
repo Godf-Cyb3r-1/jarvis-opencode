@@ -40,11 +40,29 @@ export function JarvisTalkLane() {
         ...(history ? ["Previous side conversation:\n" + history] : []),
         "User: " + text,
       ].join("\n\n")
+      // The primary session's selected free model can return an empty completion.
+      // Try the server's configured default model once, without mutating the
+      // busy main session or sending actions into a worker's queue.
       const result = await server.ctx.sdk.api.session.generate({ sessionID: params.id, prompt })
       if (!alive) return
-      setMessages((items) => [...items, { role: "assistant", text: result.text || "I couldn't form a reply just now." }])
+      let reply = result.text?.trim() ?? ""
+      if (!reply) {
+        const recovery = await server.ctx.sdk.api.experimental.generate.text({
+          prompt: [
+            "You are Jarvis, a concise, conversational Tamil/South Indian English personal assistant.",
+            "You are speaking in the separate Talk window, which cannot run tools or control workers.",
+            "Do not claim to have played media, completed an action, or checked a worker unless verified.",
+            "Respond naturally to the user's message, and if it requests an action, clearly say it must be sent to the main Jarvis task conversation.",
+            prompt,
+          ].join("\n\n"),
+        })
+        if (!alive) return
+        reply = recovery.text?.trim() ?? ""
+      }
+      if (!reply) throw new Error("Both conversation models returned empty text. Check the selected model, provider quota and server logs.")
+      setMessages((items) => [...items, { role: "assistant", text: reply }])
     } catch (cause) {
-      if (alive) setError(cause instanceof Error ? cause.message : "Conversation connection failed.")
+      if (alive) setError(cause instanceof Error ? cause.message : "Conversation request failed; inspect the model/provider connection.")
     } finally {
       if (alive) setLoading(false)
     }

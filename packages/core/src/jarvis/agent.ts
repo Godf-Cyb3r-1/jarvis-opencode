@@ -15,6 +15,7 @@ export const permissions = [
   { action: "glob", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
   { action: "question", resource: "*", effect: "allow" },
+  { action: "capability_discover", resource: "*", effect: "allow" },
   { action: "agent_list", resource: "*", effect: "allow" },
   { action: "instabox_status", resource: "*", effect: "allow" },
   { action: "model_list", resource: "*", effect: "allow" },
@@ -43,6 +44,8 @@ export const definition = (): Agent.Info => ({
   id: ID,
   name: Agent.Name.make("Jarvis"),
   mode: "primary",
+  // Controller only: workers continue independently without this turn budget.
+  steps: 8,
   // Omitted model follows the same configured/default OpenCode selection
   // as the working stock agent. Never force the limited -free route.
   ...(process.env.JARVIS_BRAIN_MODEL?.trim()
