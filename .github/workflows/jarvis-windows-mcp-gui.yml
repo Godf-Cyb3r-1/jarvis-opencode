@@ -1,0 +1,90 @@
+name: Jarvis Windows V3 GUI with offline Windows-MCP
+on:
+  push:
+    branches: [feature/jarvis-windows-mcp-builtin-20261110]
+    paths:
+      - 'packages/**'
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-windows-mcp-gui.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stage-windows-mcp:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.9.18'
+      - name: Install managed native Windows Python 3.14
+        shell: pwsh
+        run: uv python install 3.14
+      - name: Package Python runtime and pinned Windows-MCP 0.8.8 offline
+        shell: pwsh
+        run: ./packages/desktop/script/stage-windows-mcp.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-windows-mcp-runtime
+          path: packages/desktop/resources/windows-mcp/
+          if-no-files-found: error
+          compression-level: 1
+
+  build-windows-gui:
+    needs: stage-windows-mcp
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      OPENCODE_VERSION: '2.2.5'
+      OPENCODE_CHANNEL: latest
+      JARVIS_WINDOWS_MCP_BUNDLE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-windows-mcp-runtime
+          path: packages/desktop/resources/windows-mcp/
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install and test Jarvis core
+        run: |
+          bun install --frozen-lockfile
+          bun install --os="*" --cpu="*" --libc="*" @lydell/node-pty@1.2.0-beta.12
+          cd packages/core && bun test src/jarvis/
+      - name: Typecheck Jarvis core
+        run: bun run --cwd packages/core typecheck
+      - name: Compile Windows Jarvis CLI engine
+        env:
+          OPENCODE_TARGET: windows-x64-baseline
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui --skip-install
+      - name: Build Electron Windows GUI
+        env:
+          OPENCODE_TARGET: windows-x64
+        run: bun run --cwd packages/desktop script/build.ts
+      - name: Package Electron Windows GUI with Windows-MCP sidecar
+        env:
+          OPENCODE_TARGET: windows-x64
+        run: bun run --cwd packages/desktop script/pack.ts
+      - name: Verify executable, MCP Python, bootstrap and tool package
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=dist/desktop/app/resources
+          test -s "$root/opencode-cli.exe"
+          test -s "$root/windows-mcp/python/python.exe"
+          test -s "$root/windows-mcp/bootstrap.py"
+          test -s "$root/windows-mcp/site-packages/windows_mcp/__main__.py"
+          test -s "$root/windows-mcp/LICENSE.windows-mcp.txt"
+          file "$root/opencode-cli.exe" | grep -E 'PE32|PE32+'
+          file "$root/windows-mcp/python/python.exe" | grep -E 'PE32|PE32+'
+          test -n "$(find dist/desktop/app -maxdepth 1 -name '*.exe' | head -1)"
+          mkdir -p artifacts
+          (cd dist/desktop && zip -qr ../../artifacts/Jarvis-Windows-GUI-WindowsMCP-x64.zip app)
+          (cd artifacts && sha256sum Jarvis-Windows-GUI-WindowsMCP-x64.zip > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-windows-gui-builtin-windows-mcp
+          path: artifacts/
+          if-no-files-found: error
