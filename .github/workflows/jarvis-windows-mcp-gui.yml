@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     env:
-      OPENCODE_VERSION: '2.2.5-windowsmcp.4'
+      OPENCODE_VERSION: '2.2.5-windowsmcp.5'
       OPENCODE_CHANNEL: latest
       JARVIS_WINDOWS_MCP_BUNDLE: '1'
     steps:
@@ -74,29 +74,6 @@ jobs:
         env:
           OPENCODE_TARGET: windows-x64
         run: bun run --cwd packages/desktop script/pack.ts
-      - name: Install Wine for Windows NSIS resource processing
-        run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wine64 wine
-          command -v wine
-      - name: Produce one integrated Windows installer
-        env:
-          OPENCODE_TARGET: windows-x64
-        run: |
-          cd packages/desktop
-          bunx electron-builder --win nsis --x64 --prepackaged ../../dist/desktop/app --publish never --config electron-builder.config.ts
-      - name: Verify one installer contains bundled Windows-MCP
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s dist/desktop/app/resources/windows-mcp/python/python.exe
-          test -s dist/desktop/app/resources/windows-mcp/site-packages/windows_mcp/__main__.py
-          installer=$(find packages/desktop/dist -maxdepth 1 -type f -iname '*.exe' | head -1)
-          test -n "$installer"
-          file "$installer" | grep -E 'PE32|PE32+'
-          mkdir -p artifacts
-          cp "$installer" artifacts/Jarvis-Windows-Integrated-Setup-x64.exe
-          (cd artifacts && sha256sum Jarvis-Windows-Integrated-Setup-x64.exe > SHA256SUMS)
       - name: Verify executable, MCP Python, bootstrap and tool package
         shell: bash
         run: |
@@ -110,18 +87,72 @@ jobs:
           file "$root/opencode-cli.exe" | grep -E 'PE32|PE32+'
           file "$root/windows-mcp/python/python.exe" | grep -E 'PE32|PE32+'
           test -n "$(find dist/desktop/app -maxdepth 1 -name '*.exe' | head -1)"
-          test -s artifacts/Jarvis-Windows-Integrated-Setup-x64.exe
+          test -n "$(find dist/desktop/app -maxdepth 1 -name '*.exe' | head -1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-win-unpacked-ci
+          path: dist/desktop/app/
+          if-no-files-found: error
+          compression-level: 1
+
+  make-single-installer:
+    needs: build-windows-gui
+    runs-on: windows-2025
+    timeout-minutes: 65
+    env:
+      OPENCODE_VERSION: '2.2.5-windowsmcp.5'
+      OPENCODE_CHANNEL: latest
+      OPENCODE_TARGET: windows-x64
+      JARVIS_WINDOWS_MCP_BUNDLE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install packaging dependencies
+        shell: pwsh
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-win-unpacked-ci
+          path: dist/desktop/app/
+      - name: Verify packaged Windows GUI and built-in MCP
+        shell: pwsh
+        run: |
+          $root = "dist/desktop/app/resources"
+          foreach ($file in @("opencode-cli.exe", "windows-mcp/python/python.exe", "windows-mcp/bootstrap.py", "windows-mcp/site-packages/windows_mcp/__main__.py")) {
+            if (!(Test-Path (Join-Path $root $file))) { throw "Missing internal resource: $file" }
+          }
+      - name: Create single NSIS installer on native Windows
+        shell: pwsh
+        run: |
+          Push-Location packages/desktop
+          bunx electron-builder --win nsis --x64 --prepackaged ../../dist/desktop/app --publish never --config electron-builder.config.ts
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer packaging failed" }
+          Pop-Location
+      - name: Package only the single integrated installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory artifacts -Force | Out-Null
+          $installer = Get-ChildItem "packages/desktop/dist" -Filter "*.exe" -File | Select-Object -First 1
+          if (!$installer) { throw "Installer missing" }
+          Copy-Item $installer.FullName "artifacts/Jarvis-Windows-Integrated-Setup-x64.exe"
+          $hash = (Get-FileHash "artifacts/Jarvis-Windows-Integrated-Setup-x64.exe" -Algorithm SHA256).Hash.ToLower()
+          "$hash  Jarvis-Windows-Integrated-Setup-x64.exe" | Set-Content "artifacts/SHA256SUMS"
       - uses: actions/upload-artifact@v4
         with:
           name: Jarvis-Windows-Integrated-Installer
           path: artifacts/
           if-no-files-found: error
-      - name: Remove CI-only Windows-MCP staging artifact
+      - name: Remove CI-only runtime and unpacked app artifacts
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
+        shell: pwsh
         run: |
-          gh api --paginate "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" --jq '.artifacts[] | select(.name == "jarvis-windows-mcp-runtime") | .id' | while read -r id; do
-            gh api --method DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
-          done
+          $run = gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" | ConvertFrom-Json
+          foreach ($item in $run.artifacts) {
+            if ($item.name -in @("jarvis-windows-mcp-runtime", "jarvis-win-unpacked-ci")) {
+              gh api --method DELETE "repos/${{ github.repository }}/actions/artifacts/$($item.id)"
+            }
+          }
