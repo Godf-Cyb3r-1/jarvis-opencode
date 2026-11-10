@@ -1,0 +1,49 @@
+name: Jarvis V3 Linux graphical desktop (Electron)
+on:
+  push:
+    branches: [fix/jarvis-universal-capabilities-gui-v3-20261110]
+    paths:
+      - 'packages/**'
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-linux-gui-v3.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-gui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    env:
+      OPENCODE_VERSION: '2.2.5'
+      OPENCODE_CHANNEL: latest
+      OPENCODE_TARGET: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Jarvis V3 regression tests
+        run: cd packages/core && bun test src/jarvis/
+      - name: Core typecheck
+        run: bun run --cwd packages/core typecheck
+      - name: Compile Linux Jarvis engine
+        run: bun run --cwd packages/cli script/build.ts --single --skip-web-ui
+      - name: Build graphical renderer
+        run: bun run --cwd packages/desktop script/build.ts
+      - name: Package Linux desktop GUI
+        run: bun run --cwd packages/desktop script/pack.ts
+      - name: Verify Linux graphical artifacts
+        run: |
+          set -euo pipefail
+          ls -lh dist/desktop/
+          test -n "$(find dist/desktop -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' \) | head -1)"
+          mkdir -p artifacts
+          find dist/desktop -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' \) -exec cp {} artifacts/ \;
+          (cd artifacts && sha256sum * > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-v3-linux-graphical-desktop
+          path: artifacts/
+          if-no-files-found: error
