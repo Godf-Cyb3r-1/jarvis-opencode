@@ -1,0 +1,34 @@
+name: Jarvis Core v2 native OS baseline
+on:
+  push:
+    branches: [feature/jarvis-core-v2-brief-20261110]
+    paths:
+      - 'jarvis/benchmarks/**'
+      - '.github/workflows/jarvis-core-v2-benchmark.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Install pinned repository dependencies
+        run: bun install --frozen-lockfile
+      - name: Run baseline on real OS runner
+        env:
+          JARVIS_BENCH_OUTPUT: artifacts/jarvis-core-v2-baseline.json
+        run: bun run jarvis/benchmarks/core-v2-baseline.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-core-v2-baseline-${{ matrix.os }}
+          path: artifacts/jarvis-core-v2-baseline.json
+          if-no-files-found: error
