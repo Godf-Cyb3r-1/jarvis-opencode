@@ -4,6 +4,8 @@ on:
     branches: [feature/jarvis-core-v2-brief-20261110]
     paths:
       - 'jarvis/benchmarks/**'
+      - 'packages/core/src/jarvis/**'
+      - 'packages/core/src/session/**'
       - '.github/workflows/jarvis-core-v2-benchmark.yml'
   workflow_dispatch:
 permissions:
@@ -23,6 +25,10 @@ jobs:
           bun-version: '1.4.4'
       - name: Install pinned repository dependencies
         run: bun install --frozen-lockfile
+      - name: Core typecheck
+        run: bun run --cwd packages/core typecheck
+      - name: Jarvis core tests
+        run: bun test packages/core/src/jarvis/
       - name: Run baseline on real OS runner
         env:
           JARVIS_BENCH_OUTPUT: artifacts/jarvis-core-v2-baseline.json
