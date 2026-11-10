@@ -1,0 +1,11 @@
+{"schema":1,"phase":"t_msg","sessionID":"ses_fixture","at":1,"monotonicMs":100}
+{"schema":1,"phase":"t_intent","sessionID":"ses_fixture","at":2,"monotonicMs":110,"intent":"low"}
+{"schema":1,"phase":"t_route_available","sessionID":"ses_fixture","at":3,"monotonicMs":111}
+{"schema":1,"phase":"t_action_launched","sessionID":"ses_fixture","at":4,"monotonicMs":140}
+{"schema":1,"phase":"t_ack","sessionID":"ses_fixture","at":5,"monotonicMs":150,"openerHash":"e3b0c44298fc1c149afbf4c8"}
+{"schema":1,"phase":"t_verified","sessionID":"ses_fixture","at":6,"monotonicMs":200,"verified":true,"outcome":"success"}
+{"schema":1,"phase":"t_msg","sessionID":"ses_fixture","at":7,"monotonicMs":250}
+{"schema":1,"phase":"t_intent","sessionID":"ses_fixture","at":8,"monotonicMs":260,"intent":"high"}
+{"schema":1,"phase":"t_route_available","sessionID":"ses_fixture","at":9,"monotonicMs":265}
+{"schema":1,"phase":"t_ack","sessionID":"ses_fixture","at":10,"monotonicMs":290,"openerHash":"e3b0c44298fc1c149afbf4c8"}
+{"schema":1,"phase":"t_refusal","sessionID":"ses_fixture","at":11,"monotonicMs":291}
