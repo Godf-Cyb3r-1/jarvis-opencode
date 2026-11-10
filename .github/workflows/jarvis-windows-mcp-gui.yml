@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     env:
-      OPENCODE_VERSION: '2.2.5'
+      OPENCODE_VERSION: '2.2.5-windowsmcp.1'
       OPENCODE_CHANNEL: latest
       JARVIS_WINDOWS_MCP_BUNDLE: '1'
     steps:
