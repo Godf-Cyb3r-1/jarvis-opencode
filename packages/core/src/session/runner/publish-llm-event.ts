@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { type LLMEvent, type ProviderMetadata, type ToolResultValue } from "@opencode/ai/effect"
 import { isRecord } from "@opencode/util/record"
 import type { Agent } from "@opencode/schema/agent"
@@ -241,11 +242,20 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           if (name === "text" && input.agent === "jarvis") {
             if (!jarvisFirstAckRecorded && content.trim()) {
               jarvisFirstAckRecorded = true
-              recordJarvisTrace({ phase: "t_ack", sessionID: String(input.sessionID) })
+              const opener = content.replace(/^\\s*\\[[a-z-]+\\]\\s*/i, "").trim().split(/\\s+/).slice(0, 2).join(" ").toLowerCase()
+              const openerHash = createHash("sha256").update(opener).digest("hex").slice(0, 20)
+              recordJarvisTrace({ phase: "t_ack", sessionID: String(input.sessionID), openerHash })
+              if (/^(?:i can(?:not|'t)|i'm unable|i don't have|as an ai|i am unable)\\b/i.test(content.trim()))
+                recordJarvisTrace({ phase: "t_refusal", sessionID: String(input.sessionID) })
+              if (/^(?:done|completed|successfully|i(?:'ve| have) (?:sent|finished|completed|opened|installed|built))\\b/i.test(content.trim()))
+                recordJarvisTrace({ phase: "t_success_claim", sessionID: String(input.sessionID) })
             }
             const clean = normalizeJarvisText(content, { alreadyUsed: jarvisExpressionUsed })
             content = clean.text
-            if (clean.accepted) jarvisExpressionUsed = true
+            if (clean.accepted) {
+              jarvisExpressionUsed = true
+              recordJarvisTrace({ phase: "t_cue", sessionID: String(input.sessionID) })
+            }
             if (clean.removed.length) {
               yield* Effect.logWarning("Jarvis response expression markers rejected", {
                 sessionID: input.sessionID,
