@@ -353,6 +353,8 @@ export const layer = Layer.effect(
       const registeredTools = [...hooked.keys()]
       if (jarvisRequest && kind === "primary")
         recordJarvisTrace({ phase: "t_intent", sessionID: String(session.id), intent: planExecution(lastUserText).complexity })
+      if (jarvisRequest && kind === "primary" && registeredTools.some((tool) => ["session_create", "jarvis_quick_action", "instabox_status"].includes(tool)))
+        recordJarvisTrace({ phase: "t_route_available", sessionID: String(session.id) })
       if (jarvisRequest && kind === "primary") {
         system.push(SystemPart.make(capabilityStatement(registeredTools)))
         // A model that responds without calling tools cannot complete a simple
