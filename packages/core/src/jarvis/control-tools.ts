@@ -16,6 +16,8 @@ import { findMemories, forget, remember } from "./memory.js"
 import { auditAppend, auditItems, pickAgent } from "./administration.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-memory.js"
 import { checkInstabox, runInstabox } from "./instabox-runtime.js"
+import { planExecution, preferredReasoningVariant } from "./fast-path.js"
+import { executeQuickAction } from "./quick-action.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -161,6 +163,40 @@ export const Plugin = {
             Effect.map((output) => ({ output: { output, machine: input.machine ?? process.env.JARVIS_INSTABOX_MACHINE ?? "jarvis" }, content: output || "Command completed with no output." })),
             Effect.mapError((error) => new ToolFailure({ message: "Instabox remote execution unavailable: " + String(error), error })),
           ),
+      })
+      editor.add({
+        name: "jarvis_plan",
+        options: { codemode: false },
+        description: "Fast deterministic assessment of a user's task: choose reasoning complexity, soft execution budget and worker parallelism. Call once before substantial work; trivial conversation needs no planner.",
+        input: Schema.Struct({ task: Schema.String }),
+        output: Schema.Struct({
+          complexity: Schema.Literals(["low", "medium", "high", "max"]),
+          budgetSeconds: Schema.Number,
+          parallelWorkers: Schema.Number,
+          reason: Schema.String,
+          risk: Schema.Literals(["normal", "sensitive"]),
+        }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          return planExecution(input.task)
+        }).pipe(
+          Effect.map((output) => ({ output, content: "Suggested " + output.complexity + " thinking; " + output.budgetSeconds + " second soft progress checkpoint. " + output.reason })),
+          Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to plan task", error })),
+        ),
+      })
+      editor.add({
+        name: "jarvis_quick_action",
+        options: { codemode: false },
+        description: "Run supported fast desktop actions without launching a full worker. Can open an allowed media page or YouTube search in the default Linux/Windows browser. It does NOT prove playback. If playback or interaction is needed, delegate browser automation to a worker. Do not call for arbitrary commands or unknown sites.",
+        input: Schema.Struct({ request: Schema.String }),
+        output: Schema.Struct({ kind: Schema.String, url: Schema.String, detail: Schema.String }),
+        execute: (input, context) => Effect.gen(function* () {
+          yield* authorize(context.sessionID, context.agent)
+          return yield* Effect.promise(() => executeQuickAction(input.request))
+        }).pipe(
+          Effect.map((output) => ({ output, content: output.detail })),
+          Effect.mapError((error) => new ToolFailure({ message: "Quick action not available: " + String(error), error })),
+        ),
       })
       editor.add({
         name: "agent_pick",
@@ -336,13 +372,27 @@ export const Plugin = {
               return yield* new ToolFailure({ message: "Jarvis cannot be used as a worker agent." })
             if (!selected.info)
               return yield* new ToolFailure({ message: "Requested worker agent is unavailable." })
+            const plan = planExecution(input.instruction)
             let workerModel: ModelSchema.Ref | undefined
             if (input.model) {
               const available = yield* models.available()
-              const match = available.find((entry) => entry.providerID + "/" + entry.id === input.model)
+              const requested = ModelSchema.Ref.parse(input.model)
+              const match = available.find((entry) => entry.providerID === requested.providerID && entry.id === requested.id)
               if (!match)
                 return yield* new ToolFailure({ message: "Requested worker model is unavailable: " + input.model })
-              workerModel = ModelSchema.Ref.parse(input.model)
+              const supported = match.variants.map((variant) => String(variant.id))
+              const best = requested.variant ? undefined : preferredReasoningVariant(plan.complexity, supported)
+              workerModel = best ? ModelSchema.Ref.parse(input.model + "#" + best) : requested
+            } else if (selected.info?.model) {
+              const candidate = selected.info.model
+              const available = yield* models.available()
+              const advertised = available.find((entry) => entry.providerID === candidate.providerID && entry.id === candidate.id)
+              const best = advertised && !candidate.variant
+                ? preferredReasoningVariant(plan.complexity, advertised.variants.map((variant) => String(variant.id)))
+                : undefined
+              workerModel = best
+                ? ModelSchema.Ref.parse(candidate.providerID + "/" + candidate.id + "#" + best)
+                : undefined
             }
             const session = yield* sessions.create({
               parentID: context.sessionID,
@@ -352,7 +402,7 @@ export const Plugin = {
               metadata: auditAppend(
                 { jarvis: { role: "worker", queue: { status: "queued", instruction: input.instruction } } },
                 "create",
-                "Agent " + selected.id + " / " + (workerModel ? workerModel.providerID + "/" + workerModel.id : "default model"),
+                "Agent " + selected.id + " / " + (workerModel ? workerModel.providerID + "/" + workerModel.id : "default model") + " / complexity " + plan.complexity,
                 Date.now(),
               ),
               // A child otherwise inherits the brain's read-only deny rules.
@@ -361,7 +411,18 @@ export const Plugin = {
             })
             const task = scheduler.enqueue({
               id: session.id,
-              input: { sessionID: session.id, instruction: input.instruction },
+              input: {
+                sessionID: session.id,
+                instruction: [
+                  input.instruction,
+                  "",
+                  "[Jarvis worker contract]",
+                  "Complexity: " + plan.complexity + "; soft checkpoint: " + plan.budgetSeconds + " seconds.",
+                  "Start with the smallest concrete action. Verify results, avoid unnecessary exploration.",
+                  "If work extends past the checkpoint, keep working and report verified progress.",
+                  "Never claim an action occurred until it is observed. Confirm before irreversible or third-party actions.",
+                ].join("\n"),
+              },
             })
             return { sessionID: session.id, agent: String(selected.id), status: task.status === "queued" ? "queued" as const : "running" as const }
           })).pipe(
