@@ -24,6 +24,7 @@ export function bundledWindowsMcp(
     type: "local",
     command: [
       python, "-u", bootstrap, "serve", "--transport", "stdio",
+      "--control-policy", "balanced",
       "--exclude-tools", "PowerShell,Registry",
     ],
     cwd: home,
