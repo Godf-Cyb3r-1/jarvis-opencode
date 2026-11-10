@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     env:
-      OPENCODE_VERSION: '2.2.5-windowsmcp.5'
+      OPENCODE_VERSION: '2.2.5-windowsmcp.6'
       OPENCODE_CHANNEL: latest
       JARVIS_WINDOWS_MCP_BUNDLE: '1'
     steps:
@@ -123,6 +123,13 @@ jobs:
           foreach ($file in @("opencode-cli.exe", "windows-mcp/python/python.exe", "windows-mcp/bootstrap.py", "windows-mcp/site-packages/windows_mcp/__main__.py")) {
             if (!(Test-Path (Join-Path $root $file))) { throw "Missing internal resource: $file" }
           }
+      - name: Prepare native installer icons and metadata
+        shell: pwsh
+        run: |
+          Push-Location packages/desktop
+          bun ./script/copy-icons.ts prod
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer icon preparation failed" }
+          Pop-Location
       - name: Create single NSIS installer on native Windows
         shell: pwsh
         run: |
