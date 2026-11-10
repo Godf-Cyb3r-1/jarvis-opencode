@@ -21,13 +21,12 @@ jobs:
       - name: Install managed native Windows Python 3.14
         shell: pwsh
         run: uv python install 3.14
-      - name: Package Python runtime and pinned Windows-MCP 0.8.8 offline
+      - name: Package Python runtime and pinned upstream Windows-MCP source offline
         shell: pwsh
         run: ./packages/desktop/script/stage-windows-mcp.ps1
       - name: Smoke-test actual Windows-MCP stdio connection and tool catalog
         shell: pwsh
         timeout-minutes: 5
-        continue-on-error: true
         run: |
           & ./packages/desktop/resources/windows-mcp/python/python.exe ./packages/desktop/script/smoke-windows-mcp.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -43,7 +42,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     env:
-      OPENCODE_VERSION: '2.2.5-windowsmcp.1'
+      OPENCODE_VERSION: '2.2.5-windowsmcp.2'
       OPENCODE_CHANNEL: latest
       JARVIS_WINDOWS_MCP_BUNDLE: '1'
     steps:
