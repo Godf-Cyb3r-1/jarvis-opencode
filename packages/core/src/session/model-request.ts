@@ -46,6 +46,7 @@ import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-rou
 import { scopedTools } from "../jarvis/tool-scope.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
 import { classifyTurn } from "../jarvis/chat-classifier.js"
+import { expressionContext } from "../jarvis/expression-governor.js"
 import { getWorkerAdapter } from "../jarvis/worker-bridge.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
@@ -475,6 +476,13 @@ export const layer = Layer.effect(
             "\nWhen EXECUTED, respond without calling tools. Never confuse launching a page with completing an external action.\n[/Deterministic skill admission]",
           ))
         }
+      }
+      if (jarvisRequest && kind === "primary" && Option.isSome(kvOption)) {
+        const turn = input.messages.filter((message) => message.role === "user").length
+        yield* kvOption.value.set("jarvis:expression:context:v4:" + String(session.id), {
+          context: expressionContext(lastUserText, skillResults.at(-1)),
+          turn,
+        })
       }
       // Jarvis evaluates work complexity per user turn, without altering
       // provider-selected model capabilities. The worker tool may pick an
