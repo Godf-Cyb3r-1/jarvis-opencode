@@ -45,7 +45,7 @@ export function verifiedNarration(
   if(!final)return generated
   if(final.id==="greet"){
     const base=(emittedOpener || final.detail).trim()
-    const tail=continuationText(generated,base).replace(/^(?:hi|hey|hello|vanakkam)[.!?,\\s]*/i,"").trim()
+    const tail=continuationText(generated,base).replace(/^(?:(?:hi|hey|hello|vanakkam|ayyo|right|okay|sure|got it|on it)[.!?,\\s]+){1,3}/i,"").trim()
     return base+(tail?" "+tail:"")
   }
   if(!final.success)return "The action could not be completed: "+final.detail
