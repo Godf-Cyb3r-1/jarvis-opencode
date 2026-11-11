@@ -15,14 +15,13 @@ export const permissions = [
   { action: "glob", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
   { action: "question", resource: "*", effect: "allow" },
-  // Direct native execution first. Automatically allow familiar read-only
-  // commands; ask for user approval before other commands or file mutations.
-  { action: "shell", resource: "*", effect: "ask" },
-  { action: "bash", resource: "*", effect: "ask" },
-  { action: "write", resource: "*", effect: "ask" },
-  { action: "edit", resource: "*", effect: "ask" },
-  { action: "apply_patch", resource: "*", effect: "ask" },
-  { action: "execute", resource: "*", effect: "ask" },
+  // Direct execution and edits without repetitive model-side permission gates.\n  // Explicit host/session denials and exceptional destructive confirmations remain enforced.
+  { action: "shell", resource: "*", effect: "allow" },
+  { action: "bash", resource: "*", effect: "allow" },
+  { action: "write", resource: "*", effect: "allow" },
+  { action: "edit", resource: "*", effect: "allow" },
+  { action: "apply_patch", resource: "*", effect: "allow" },
+  { action: "execute", resource: "*", effect: "allow" },
   { action: "shell", resource: "pwd", effect: "allow" },
   { action: "shell", resource: "whoami", effect: "allow" },
   { action: "shell", resource: "hostname", effect: "allow" },
