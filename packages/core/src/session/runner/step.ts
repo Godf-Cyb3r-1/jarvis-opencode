@@ -95,7 +95,7 @@ export const make = Effect.gen(function* () {
         const revised = {
           ...prepared,
           system: [...prepared.system, SystemPart.make(refusalReminder)],
-          toolChoice: "none" as const,
+          toolChoice: { type: "none" as const },
         }
         const answer = yield* llm.generate(revised, input.prepared.options).pipe(
           Effect.map((result) => result.text),
