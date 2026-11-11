@@ -462,6 +462,8 @@ export const layer = Layer.effect(
               yield* kv.set(key, result as KV.Value)
             }
             skillResults.push(result)
+            if(result.success && match.id==="greet")
+              yield* kv.set("jarvis:emitted-opener:v4:"+String(session.id),{turn,text:result.detail})
             // Only independently verified outcomes populate cross-turn plans.
             const cacheKey = "jarvis:verified-plan:v4:" + planShapeKey(match.id,match.slots)
             if (result.verified) yield* kv.set(cacheKey,{ id:match.id, slots:match.slots, detail:result.detail })
