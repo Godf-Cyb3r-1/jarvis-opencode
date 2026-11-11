@@ -1,6 +1,6 @@
 import {expect,test} from "bun:test"
 import {matchSkills,executeSkill} from "./skill-router"
-import {admissionReport,narrationTools,continuationText,narrationInstructions} from "./admission-policy"
+import {admissionReport,narrationTools,continuationText,narrationInstructions,verifiedNarration} from "./admission-policy"
 import {stripDuplicateOpener} from "./expression-governor"
 /** Reconstructs the three-turn failure described in the directive.
  * The full greeting.json was not provided, so only the documented turn-3
@@ -26,7 +26,8 @@ test("reported greeting trace resolves original turn 3 to exactly one OS primiti
  expect(state.narrationOnly).toBe(true)
  const tools=narrationTools(new Map([["read",1],["session_create",2],["jarvis_quick_action",3],["browser_tabs_open",4]]),state)
  expect([...tools.keys()]).toEqual(["read"])
- const text="Opened the browser search; playback is not independently verified."
+ const text=verifiedNarration("Worker is lining up the song. Will tell you once ready.",results)
+ expect(text).toContain("unverified")
  expect(text.split(/\s+/).length).toBeLessThanOrEqual(20)
  expect(text).not.toMatch(/worker|lining up|will tell you once/i)
 })
