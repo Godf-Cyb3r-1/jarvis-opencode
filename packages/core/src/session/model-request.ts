@@ -36,6 +36,7 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import * as JarvisAgent from "../jarvis/agent.js"
 import { KV } from "../kv.js"
+import { Mcp } from "../mcp/index.js"
 import { SessionStore } from "./store.js"
 import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { itemsOf } from "../jarvis/memory.js"
@@ -355,8 +356,14 @@ export const layer = Layer.effect(
         ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
         : ""
       const registeredTools = [...hooked.keys()]
+      const mcpOption = jarvisRequest && kind === "primary"
+        ? yield* Effect.serviceOption(Mcp.Service) : Option.none<Mcp.Interface>()
+      const discoveredMcpTools = Option.isSome(mcpOption)
+        ? yield* mcpOption.value.tools().pipe(Effect.orElseSucceed(() => [] as Mcp.Tool[]))
+        : []
       const machine = jarvisRequest && kind === "primary"
-        ? probeCapabilities({tools:registeredTools,roots:[session.location.directory]})
+        ? probeCapabilities({tools:[...registeredTools,...discoveredMcpTools.map(tool=>String(tool.server)+":"+String(tool.name))],
+            roots:[session.location.directory]})
         : undefined
       if (machine) system.push(SystemPart.make(firstPersonCapabilities(machine)))
       let verifiedGeneralist = false
