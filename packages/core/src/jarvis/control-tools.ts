@@ -19,6 +19,7 @@ import { checkInstabox, runInstabox } from "./instabox-runtime.js"
 import { planExecution, preferredReasoningVariant } from "./fast-path.js"
 import { executeQuickAction } from "./quick-action.js"
 import { registerGeneralistWorkerBridge } from "./worker-bridge.js"
+import { registerWorkerAgents, probeCapabilities } from "./capability-probe.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -46,6 +47,10 @@ export const Plugin = {
     const agents = yield* Agent.Service
     const models = yield* Model.Service
     const kv = yield* KV.Service
+    const workers = (yield* agents.list()).filter(candidate=>candidate.id!==JarvisAgent.ID && !candidate.hidden)
+      .map(candidate=>String(candidate.id))
+    registerWorkerAgents(workers)
+    probeCapabilities({workers})
     const loadMemory = Effect.fn("Jarvis.CloudMemory.load")(function* (projectID: string) {
       const key = "jarvis:memory:project:" + projectID
       const local = (yield* kv.get(key)) as Record<string, unknown> | undefined
