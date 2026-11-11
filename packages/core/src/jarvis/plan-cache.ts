@@ -47,8 +47,8 @@ export const slotify=(value:unknown,slots:Record<string,string>):unknown=>{
  if(typeof value==="string"){
   let next=value
   for(const [key,actual] of Object.entries(slots)) if(actual.length>0){
-   const escaped=actual.replace(/[.*+?^${}()|[\]\\]/g,"\\  for(const [key,actual] of Object.entries(slots)) if(actual.length>0) next=next.replaceAll(actual,"{{"+key+"}}")")
-   next=next.replace(new RegExp(escaped,"gi"),"{{"+key+"}}")
+   const escaped=[...actual].map(ch=>"\\^$.*+?()[]{}|".includes(ch)?"\\"+ch:ch).join("")
+   next=next.replace(new RegExp(escaped,"gi"),()=> "{{"+key+"}}")
   }
   return next
  }
