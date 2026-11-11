@@ -45,6 +45,7 @@ import { launchBrowserURL } from "../jarvis/quick-action.js"
 import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
 import { scopedTools } from "../jarvis/tool-scope.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
+import { classifyTurn } from "../jarvis/chat-classifier.js"
 import { Session } from "../session.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
@@ -353,6 +354,58 @@ export const layer = Layer.effect(
       const lastUserText = lastUser && lastUser.role === "user"
         ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
         : ""
+      // Independent chat admission: route single-worker follow-ups/cancellation
+      // deterministically, without waiting for the worker to finish or asking the
+      // free brain to rediscover the same control tools.
+      const workerService = jarvisRequest && kind === "primary"
+        ? yield* Effect.serviceOption(Session.Service) : Option.none<Session.Interface>()
+      const activeWorkers = yield* Effect.gen(function* () {
+        if (Option.isNone(workerService)) return [] as SessionSchema.Info[]
+        const listed = yield* workerService.value.list({ parentID: session.id, limit: 100 })
+        const active = yield* workerService.value.active
+        return listed.data.filter((child) =>
+          child.parentID === session.id &&
+          (child.metadata?.jarvis as { role?: string } | undefined)?.role === "worker" &&
+          active.has(child.id),
+        )
+      }).pipe(Effect.orElseSucceed(() => [] as SessionSchema.Info[]))
+      const chatKind = jarvisRequest && kind === "primary"
+        ? classifyTurn(lastUserText, activeWorkers.length > 0) : undefined
+      let routedWorkerAction: string | undefined
+      if (chatKind && (chatKind === "CANCEL" || chatKind === "FOLLOWUP") &&
+          activeWorkers.length === 1 && Option.isSome(workerService) && Option.isSome(kvOption)) {
+        const target = activeWorkers[0]!
+        const turn = input.messages.filter((message) => message.role === "user").length
+        const key = actionToken(String(session.id), turn, lastUserText) + ":worker:" + chatKind
+        const saved = yield* kvOption.value.get(key)
+        if (typeof saved === "string") {
+          routedWorkerAction = saved
+        } else {
+          // Reserve before dispatch. A provider retry cannot duplicate an effect.
+          yield* kvOption.value.set(key, "Action attempted; confirmation unavailable")
+          const command = chatKind === "CANCEL"
+            ? workerService.value.interrupt(target.id).pipe(
+                Effect.map((ok) => ok ? "Worker interruption requested: " + target.id : "Worker was not running: " + target.id),
+              )
+            : workerService.value.prompt({ sessionID: target.id, text: lastUserText }).pipe(
+                Effect.as("Follow-up sent to worker: " + target.id),
+              )
+          routedWorkerAction = yield* command.pipe(
+            Effect.catch((error) => Effect.succeed("Worker action failed: " + String(error))),
+          )
+          yield* kvOption.value.set(key, routedWorkerAction)
+        }
+        for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
+      }
+      if (chatKind && jarvisRequest && kind === "primary") {
+        system.push(SystemPart.make(
+          "[Jarvis live conversation routing] " + chatKind +
+          ". Active owned workers: " + activeWorkers.length +
+          (routedWorkerAction ? ". Actual dispatch outcome: " + routedWorkerAction +
+            ". Narrate it; do not dispatch again." : "") +
+          ". Never await worker completion in the conversation lane. [/Jarvis live conversation routing]",
+        ))
+      }
       const registeredTools = [...hooked.keys()]
       const matchedSkills = jarvisRequest && kind === "primary" ? matchSkills(lastUserText) : []
       const skillResults: SkillResult[] = []
