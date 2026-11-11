@@ -372,6 +372,7 @@ export const layer = Layer.effect(
       const chatKind = jarvisRequest && kind === "primary"
         ? classifyTurn(lastUserText, activeWorkers.length > 0) : undefined
       let routedWorkerAction: string | undefined
+      let narrationOnly = false
       if (chatKind && (chatKind === "CANCEL" || chatKind === "FOLLOWUP") &&
           activeWorkers.length === 1 && Option.isSome(workerService) && Option.isSome(kvOption)) {
         const target = activeWorkers[0]!
@@ -396,6 +397,7 @@ export const layer = Layer.effect(
           yield* kvOption.value.set(key, routedWorkerAction)
         }
         for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
+        narrationOnly = true
       }
       if (chatKind && jarvisRequest && kind === "primary") {
         system.push(SystemPart.make(
@@ -429,7 +431,7 @@ export const layer = Layer.effect(
               result = yield* Effect.promise(() => executeSkill(match, {
                 launch: (url) => launchBrowserURL(url),
                 workers: async () => {
-                  if (Option.isNone(sessionService)) return "Worker status service not available; status not verified."
+                  if (Option.isNone(sessionService)) throw new Error("Worker status unavailable from this runtime; delegate through session_list")
                   const service = sessionService.value
                   const children = await Effect.runPromise(service.list({ parentID: session.id, limit: 100 }))
                   return children.data.length
@@ -453,6 +455,7 @@ export const layer = Layer.effect(
         const allSucceeded = matchedSkills.length > 0 && skillResults.length === matchedSkills.length &&
           skillResults.every((result) => result.success)
         if (allSucceeded) {
+          narrationOnly = true
           const filtered = scopedTools(hooked, matchedSkills)
           hooked.clear()
           for (const [name, definition] of filtered) hooked.set(name, definition)
@@ -663,7 +666,7 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: input.toolChoice,
+        toolChoice: narrationOnly ? "none" : input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
       })
