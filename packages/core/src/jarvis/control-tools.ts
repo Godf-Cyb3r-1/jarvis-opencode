@@ -8,6 +8,8 @@ import { Model } from "../model.js"
 import { KV } from "../kv.js"
 import { Model as ModelSchema } from "@opencode/schema/model"
 import { Session } from "../session.js"
+import { Tool } from "../tool.js"
+import { browserWorkerDecision } from "./browser-capability.js"
 import { SessionSchema } from "../session/schema.js"
 import * as JarvisAgent from "./agent.js"
 import { JarvisScheduler } from "./controller.js"
@@ -47,6 +49,7 @@ export const Plugin = {
   effect: Effect.fn("JarvisControlTools.Plugin")(function* (ctx: Context) {
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
+    const installedTools = yield* Tool.Service
     const models = yield* Model.Service
     const kv = yield* KV.Service
     const loadMemory = Effect.fn("Jarvis.CloudMemory.load")(function* (projectID: string) {
@@ -237,7 +240,11 @@ export const Plugin = {
           const available = (yield* agents.list())
             .filter((agent) => agent.id !== JarvisAgent.ID && !agent.hidden)
             .map((agent) => ({ id: String(agent.id), description: agent.description }))
-          const chosen = pickAgent(input.task, available)
+          const realTools=(yield* installedTools.list()).map((tool)=>String(tool.id))
+          const browser=browserWorkerDecision(input.task,available,realTools)
+          if(browser.route==="unavailable")
+            return yield* new ToolFailure({message:browser.reason})
+          const chosen = browser.route==="browser" ? available.find(agent=>agent.id==="browser") : pickAgent(input.task, available)
           if (!chosen) return yield* new ToolFailure({ message: "No usable worker agents are installed." })
           return { agent: chosen.id, reason: chosen.description ?? "Available registered worker agent" }
         }).pipe(
@@ -394,7 +401,13 @@ export const Plugin = {
             const availableAgents = (yield* agents.list())
               .filter((agent) => agent.id !== JarvisAgent.ID && !agent.hidden)
               .map((agent) => ({ id: String(agent.id), description: agent.description }))
-            const chosenID = input.agent ?? pickAgent(input.instruction, availableAgents)?.id ?? "build"
+            const realTools=(yield* installedTools.list()).map((tool)=>String(tool.id))
+            const browser=browserWorkerDecision(input.instruction,availableAgents,realTools)
+            if(browser.route==="unavailable")
+              return yield* new ToolFailure({message:browser.reason})
+            // Never send interactive browser work to a code-only agent.
+            const chosenID = browser.route==="browser" ? "browser" :
+              input.agent ?? pickAgent(input.instruction, availableAgents)?.id ?? "build"
             const selected = yield* agents.select(Agent.ID.make(chosenID))
             if (selected.id === JarvisAgent.ID)
               return yield* new ToolFailure({ message: "Jarvis cannot be used as a worker agent." })

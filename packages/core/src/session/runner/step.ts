@@ -29,6 +29,7 @@ import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { SessionRunnerRetry } from "./retry.js"
 import { shouldRetryRefusal, refusalReminder } from "../../jarvis/refusal-interceptor.js"
 import { bodyFacts } from "../../jarvis/body-schema.js"
+import { inspectToolCall,rawTextFallback } from "../../jarvis/tool-call-guard.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
@@ -119,7 +120,28 @@ export const make = Effect.gen(function* () {
       readonly fiber: Fiber.Fiber<void, Permission.DeclinedError | QuestionTool.CancelledError>
     }> = []
     const interruptTools = Effect.suspend(() => Fiber.interruptAll(toolRuns.map((run) => run.fiber)))
+    const lastUser = [...input.prepared.request.messages].reverse().find(msg=>msg.role==="user")
+    const sourceText = lastUser?.content.flatMap(part=>part.type==="text" ? [part.text] : []).join(" ") ?? ""
+    const guardFailures = new Map<string,number>()
     const executeTool = (call: ToolCall) => {
+      if(input.agent==="jarvis" && sourceText){
+        const previous=guardFailures.get(call.name) ?? 0
+        const decision=inspectToolCall(call.name,call.input,sourceText,previous)
+        if(!decision.allowed){
+          guardFailures.set(call.name,previous+1)
+          if(decision.fallback){
+            // Last resort: the exact user input, not the model's paraphrase.
+            const corrected={...call,input:rawTextFallback(call.name,call.input,sourceText)}
+            return input.prepared.executeTool({
+              sessionID:input.sessionID,agent:input.agent,
+              messageID:input.assistantMessageID,call:corrected,
+              progress:(update)=>publisher.progress(call.id,update),
+            })
+          }
+          return Effect.fail(new Tool.Error({message:decision.reason+
+            " Retry once with the original user message verbatim."}))
+        }
+      }
       if (input.prepared.request.toolChoice?.type === "none")
         return new Tool.Error({ message: "Tools are disabled after the maximum agent steps" })
       return input.prepared.executeTool({

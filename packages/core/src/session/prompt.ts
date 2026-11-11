@@ -97,6 +97,7 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
       metadata: jarvisSkills.length
         ? { ...(event.metadata ?? {}), jarvisV4Admission: jarvisSkills.map((skill) => ({
             id: skill.id, confidence: skill.confidence,
+            state: "matched", matched: true, executed: false, verified: false,
           })) }
         : event.metadata,
     }),

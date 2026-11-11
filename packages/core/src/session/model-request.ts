@@ -43,6 +43,8 @@ import { planExecution } from "../jarvis/fast-path.js"
 import { actionToken } from "../jarvis/capability-preflight.js"
 import { launchBrowserURL } from "../jarvis/quick-action.js"
 import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
+import { planShapeKey } from "../jarvis/slot-resolver.js"
+import { admissionReport, narrationInstructions } from "../jarvis/admission-policy.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
 import { scopeShellFirst } from "../jarvis/command-first.js"
 import { classifyTurn } from "../jarvis/chat-classifier.js"
@@ -413,7 +415,19 @@ export const layer = Layer.effect(
         ))
       }
       const registeredTools = [...hooked.keys()]
-      const matchedSkills = jarvisRequest && kind === "primary" ? matchSkills(lastUserText) : []
+      const recentUserTurns = input.messages.filter((message) => message.role === "user")
+        .slice(-9, -1).flatMap((message) => message.role === "user"
+          ? [message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")]
+          : [])
+      const projectMemory = jarvisRequest && Option.isSome(kvOption)
+        ? yield* kvOption.value.get("jarvis:memory:project:" + session.projectID) : undefined
+      const preferences = itemsOf(projectMemory as Record<string,unknown> | undefined)
+        .concat(itemsOf(session.metadata))
+      const preference = preferences.find((item) =>
+        /preferred_language\s*[:=]/i.test(item.text))?.text.match(/preferred_language\s*[:=]\s*([\p{L}]+)/iu)?.[1]
+      const matchedSkills = jarvisRequest && kind === "primary"
+        ? matchSkills(lastUserText,{recentUserTurns,preferences:preference?{preferred_language:preference}:{}})
+        : []
       const skillResults: SkillResult[] = []
       if (jarvisRequest && kind === "primary") {
         // Admission before LLM: deterministic match, real OS action, idempotent
@@ -429,7 +443,7 @@ export const layer = Layer.effect(
               result = saved as SkillResult
             } else {
               // Reserve the turn first so retries cannot open duplicate tabs.
-              result = { id: match.id, success: false, detail: "Action was previously attempted but not confirmed.", elapsedMs: 0 }
+              result = { id: match.id, success: false, verified: false, detail: "Action was previously attempted but not confirmed.", elapsedMs: 0 }
               yield* kv.set(key, result as KV.Value)
               result = yield* Effect.promise(() => executeSkill(match, {
                 launch: (url) => launchBrowserURL(url),
@@ -453,6 +467,14 @@ export const layer = Layer.effect(
               yield* kv.set(key, result as KV.Value)
             }
             skillResults.push(result)
+            if(result.success && match.id==="greet")
+              yield* kv.set("jarvis:emitted-opener:v4:"+String(session.id),{turn,text:result.detail})
+            // Only independently verified outcomes populate cross-turn plans.
+            const cacheKey = "jarvis:verified-plan:v4:" + planShapeKey(match.id,match.slots)
+            if (result.verified) yield* kv.set(cacheKey,{ id:match.id, slotKeys:Object.keys(match.slots).filter(k=>k!=="text").sort() })
+            yield* Effect.logInfo("jarvis.v4.admission.outcome",{
+              sessionID:String(session.id),intent:match.id,matched:true,executed:result.success,verified:result.verified,
+            })
             if (result.success && result.elapsedMs > 0) {
               const latencyKey = "jarvis:skill:latency:v4:" + match.id
               const previous = yield* kv.get(latencyKey)
@@ -463,15 +485,25 @@ export const layer = Layer.effect(
             }
           }
         }
-        // Preserve all available tools: deterministic execution is a fast path,
-        // not an artificial constraint on follow-up verification or workers.
-        // The skill result is already in context, so do not re-execute it.
+        const state=admissionReport(matchedSkills,skillResults)
+        if(Option.isSome(kvOption)&&matchedSkills.length){
+          const turn=input.messages.filter(message=>message.role==="user").length
+          yield* kvOption.value.set("jarvis:admission:result:v4:"+String(session.id),
+            {turn,state:state.state,matched:state.matched,executed:state.executed,verified:state.verified,
+             results:skillResults} as KV.Value)
+        }
+        if(state.narrationOnly)
+          for(const name of [...hooked.keys()])if(name!=="read")hooked.delete(name)
+        system.push(SystemPart.make(narrationInstructions(state,skillResults)))
+        if(!matchedSkills.length)
+          system.push(SystemPart.make("[Raw user text for tool arguments] "+lastUserText))
         system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
         if (matchedSkills.length) {
           system.push(SystemPart.make(
             "[Deterministic skill admission]\n" +
             matchedSkills.map((match, i) =>
               match.id + ": " + (skillResults[i]?.success ? "EXECUTED" : "NOT CONFIRMED") +
+              ", verified: "+(skillResults[i]?.verified===true) +
               ", detail: " + (skillResults[i]?.detail ?? "No execution available") +
               ". Narration hint: " + match.narrationHint,
             ).join("\n") +
@@ -679,7 +711,8 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: input.toolChoice,
+        toolChoice: jarvisRequest && kind === "primary" && admissionReport(matchedSkills,skillResults).narrationOnly
+          ? {type:"none"} : input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
       })

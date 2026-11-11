@@ -1,11 +1,12 @@
 /** Deterministic skill admission. No LLM, no network request and no heuristic mid-band. */
 import { planQuickAction } from "./fast-path.js"
+import { resolveSlots, mediaSearchURL, type SlotContext } from "./slot-resolver.js"
 
 export type SkillScope = "MEDIA" | "WEB" | "WORKER"
 export type SkillID = "play.media.search" | "open.url" | "open.app" | "search.web" | "greet" | "status.workers"
-export type SkillSlots = { text: string; url?: string; app?: string; query?: string }
-export type SkillResult = { id: SkillID; success: boolean; detail: string; elapsedMs: number }
-export type Match = { id: SkillID; confidence: number; slots: SkillSlots; closesToolScopes: SkillScope[]; narrationHint: string }
+export type SkillSlots = { text: string; url?: string; app?: string; query?: string; lang?:string; genre?:string }
+export type SkillResult = { id: SkillID; success: boolean; verified:boolean; detail: string; elapsedMs: number }
+export type Match = { id: SkillID; confidence: number; slots: SkillSlots; missingSlots?:string[]; closesToolScopes: SkillScope[]; narrationHint: string }
 export type SkillActions = { launch: (url: string) => Promise<string>; workers: () => Promise<string>; greeting?: () => Promise<string> }
 export type SkillDefinition = {
   id: SkillID
@@ -39,7 +40,7 @@ const skill = (id: SkillID, matcher: SkillDefinition["match"], closesToolScopes:
       if (id === "greet") return actions.greeting ? actions.greeting() : "Hey."
       if (id === "status.workers") return actions.workers()
       const url = id === "play.media.search"
-        ? planQuickAction(slots.text)?.url ?? "https://www.youtube.com/results?search_query=" + encodeURIComponent(slots.query ?? "Tamil songs")
+        ? mediaSearchURL(slots)
         : id === "search.web" ? "https://www.google.com/search?q=" + encodeURIComponent(slots.query ?? "")
         : slots.url
       if (!url || !isSafeURL(url)) throw new Error("Skill returned an invalid URL")
@@ -51,7 +52,7 @@ export const skills: readonly SkillDefinition[] = [
   skill("play.media.search", (text) => {
     const fast = planQuickAction(text)
     if (fast?.kind === "youtube-search") return { confidence: 0.96, slots: { text } }
-    const a = capture(text, /^(?:(?:jarvis|hey jarvis)[, ]+)?(?:(?:please|can you|could you)\s+)?(?:play|podu|போடு|பாடல் போடு)\s+(?<query>.+)$/i)
+    const a = capture(text, /^(?:(?:then|and then)\s+)?(?:(?:jarvis|hey jarvis)[, ]+)?(?:(?:please|can you|could you)\s+)?(?:play|podu|போடு|பாடல் போடு)\s+(?<query>.+)$/i)
     const query = a?.query?.trim()
     if (!query || !/(song|music|paattu|pattu|பாடல்|பாட்டு|தமிழ்|tamil)/i.test(query)) return
     return { confidence: Math.min(0.97, 0.70 + weightedOverlap(query, mediaWords)), slots: { text, query } }
@@ -76,18 +77,22 @@ export const skills: readonly SkillDefinition[] = [
   skill("status.workers", (text) => /^(?:what(?:'s| is) happening|worker status|task status|enna nadak(?:k)?uthu|என்ன நடக்குது)[?! .]*$/i.test(text)
     ? { confidence: 0.95, slots: { text } } : undefined, ["MEDIA", "WEB", "WORKER"], "Use a verified worker status summary."),
 ]
-export function matchSkill(text: string): Match | undefined {
+export function matchSkill(text: string, context:SlotContext = {}): Match | undefined {
   const input = normalize(text)
   for (const entry of skills) {
     const match = entry.match(input)
-    if (match && match.confidence >= 0.70)
-      return { id: entry.id, ...match, closesToolScopes: entry.closesToolScopes, narrationHint: entry.narrationHint }
+    if (match && match.confidence >= 0.70) {
+      const resolved=resolveSlots(text,context)
+      return { id: entry.id, ...match,
+        slots:{...match.slots,...resolved.slots}, missingSlots:resolved.missing,
+        closesToolScopes: entry.closesToolScopes, narrationHint: entry.narrationHint }
+    }
   }
 }
-export function matchSkills(text: string): Match[] {
+export function matchSkills(text: string, context:SlotContext = {}): Match[] {
   // Intents are only split on explicit sequencing words. Avoid splitting normal search queries.
   const segments = text.split(/\s+(?:and then|then|பிறகு|apram)\s+/i).slice(0, 4)
-  const matches = segments.map(matchSkill)
+  const matches = segments.map((part)=>matchSkill(part,context))
   // Execute none if even one intent is unknown: partial execution would be surprising.
   return matches.every((m) => !!m) ? matches as Match[] : []
 }
@@ -98,6 +103,7 @@ export async function executeSkill(
 ): Promise<SkillResult> {
   const started = performance.now()
   const entry = skills.find((candidate) => candidate.id === match.id)
+  if(match.missingSlots?.length) return {id:match.id,success:false,verified:false,detail:"Missing required slot: "+match.missingSlots.join(","),elapsedMs:0}
   const work = () => {
     if (!entry) throw new Error("Unknown registered skill: " + match.id)
     return entry.execute(match.slots, actions)
@@ -108,8 +114,9 @@ export async function executeSkill(
       work(),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Skill timed out")), Math.min(timeoutMs, 2000))),
     ])
-    return { id: match.id, success: true, detail, elapsedMs: performance.now() - started }
+    // Launch success only verifies OS acceptance, never actual navigation or playback.
+    return { id: match.id, success: true, verified: match.id === "greet" || match.id === "status.workers", detail, elapsedMs: performance.now() - started }
   } catch (cause) {
-    return { id: match.id, success: false, detail: String(cause), elapsedMs: performance.now() - started }
+    return { id: match.id, success: false, verified: false, detail: String(cause), elapsedMs: performance.now() - started }
   }
 }
