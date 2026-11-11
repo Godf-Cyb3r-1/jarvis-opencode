@@ -19,6 +19,8 @@ import { stringify } from "../../tool/runtime.js"
 import { normalizeJarvisText } from "../../jarvis/expression-policy.js"
 import { governExpression, initialGovernorState, stripDuplicateOpener, type GovernorState } from "../../jarvis/expression-governor.js"
 import { KV } from "../../kv.js"
+import { verifiedNarration } from "../../jarvis/admission-policy.js"
+import type { SkillResult } from "../../jarvis/skill-router.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -263,6 +265,14 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
                 const value=emitted as {turn?:number;text?:string}
                 if(value.turn===turn && typeof value.text==="string")
                   content=stripDuplicateOpener(content,value.text)
+              }
+              const action=yield* kvOption.value.get("jarvis:admission:result:v4:"+String(input.sessionID))
+              if(action && typeof action==="object" && !Array.isArray(action)){
+                const record=action as {turn?:number;executed?:boolean;results?:SkillResult[]}
+                if(record.turn===turn && record.executed && Array.isArray(record.results))
+                  content=verifiedNarration(content,record.results,
+                    emitted && typeof emitted==="object" && !Array.isArray(emitted)
+                      ? (emitted as {text?:string}).text : undefined)
               }
               yield* kvOption.value.set(key, { ...governed.state, turn } as KV.Value)
             }
