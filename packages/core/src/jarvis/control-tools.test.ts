@@ -9,7 +9,7 @@ test("Jarvis has native control, shell and editing tools", () => {
   for (const name of ["agent_list", "model_list", "session_create", "session_status", "session_list", "session_send", "session_interrupt", "session_peek", "session_switch_agent", "session_switch_model", "session_compact", "command_run"])
     expect(Permission.evaluate(name, "*", rules).effect).toBe("allow")
   for (const name of ["bash", "write", "edit", "apply_patch", "execute"])
-    expect(Permission.evaluate(name, "*", rules).effect).toBe("ask")
+    expect(Permission.evaluate(name, "*", rules).effect).toBe("allow")
   expect(Plugin.id).toBe("opencode.jarvis.control")
   expect(MaxActiveWorkers).toBeGreaterThanOrEqual(1)
   expect(MaxActiveWorkers).toBeLessThanOrEqual(16)
