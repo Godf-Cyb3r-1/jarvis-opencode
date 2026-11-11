@@ -6,7 +6,7 @@ import persona from "../../../../jarvis/persona.md" with { type: "text" }
 export const ID = Agent.ID.make("jarvis")
 
 /** The free-tier gateway needs an advertised inspection tool.
- * Keep code mutation and shell execution denied while allowing inspection.
+ * Allow direct shell commands with native OpenCode permission prompts; keep code mutation denied.
  * Last matching policy wins in OpenCode's Permission.evaluate.
  */
 export const permissions = [
@@ -15,6 +15,17 @@ export const permissions = [
   { action: "glob", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
   { action: "question", resource: "*", effect: "allow" },
+  // The brain may execute ordinary shell commands itself before spawning a worker.
+  // Unknown commands always require an explicit permission decision.
+  { action: "shell", resource: "*", effect: "ask" },
+  { action: "shell", resource: "pwd", effect: "allow" },
+  { action: "shell", resource: "whoami", effect: "allow" },
+  { action: "shell", resource: "hostname", effect: "allow" },
+  { action: "shell", resource: "ls*", effect: "allow" },
+  { action: "shell", resource: "dir*", effect: "allow" },
+  { action: "shell", resource: "git status*", effect: "allow" },
+  { action: "shell", resource: "git diff*", effect: "allow" },
+  { action: "shell", resource: "git log*", effect: "allow" },
   { action: "agent_list", resource: "*", effect: "allow" },
   { action: "instabox_status", resource: "*", effect: "allow" },
   { action: "model_list", resource: "*", effect: "allow" },
@@ -48,7 +59,7 @@ export const definition = (): Agent.Info => ({
   ...(process.env.JARVIS_BRAIN_MODEL?.trim()
     ? { model: Model.Ref.parse(process.env.JARVIS_BRAIN_MODEL.trim()) }
     : { model: undefined }),
-  description: "The top-level personal assistant. Delegates implementation and research to independent OpenCode workers.",
+  description: "The top-level personal assistant. Executes available commands directly first, then delegates substantial implementation to independent OpenCode workers.",
   system: persona,
   permissions: [...permissions],
 })
