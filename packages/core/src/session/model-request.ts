@@ -387,6 +387,14 @@ export const layer = Layer.effect(
               yield* kv.set(key, result as KV.Value)
             }
             skillResults.push(result)
+            if (result.success && result.elapsedMs > 0) {
+              const latencyKey = "jarvis:skill:latency:v4:" + match.id
+              const previous = yield* kv.get(latencyKey)
+              const historical = Array.isArray(previous)
+                ? previous.filter((n): n is number => typeof n === "number" && Number.isFinite(n)).slice(-19)
+                : []
+              yield* kv.set(latencyKey, [...historical, result.elapsedMs])
+            }
           }
         }
         const allSucceeded = matchedSkills.length > 0 && skillResults.length === matchedSkills.length &&
@@ -417,11 +425,26 @@ export const layer = Layer.effect(
         const requestText = latest && latest.role === "user"
           ? latest.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
           : ""
-        const plan = planExecution(requestText)
+        const kv = Option.isSome(kvOption) ? kvOption.value : undefined
+        const stateKey = "jarvis:complexity:v4:" + String(session.id)
+        const previousState = kv ? yield* kv.get(stateKey) : undefined
+        const previousTier = typeof previousState === "string" &&
+          ["low", "medium", "high", "max"].includes(previousState)
+          ? previousState as "low" | "medium" | "high" | "max" : undefined
+        const latencies = kv && matchedSkills[0]
+          ? yield* kv.get("jarvis:skill:latency:v4:" + matchedSkills[0].id) : undefined
+        const plan = planExecution(requestText, {
+          previous: previousTier,
+          latencies: Array.isArray(latencies)
+            ? latencies.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+            : [],
+        })
+        if (kv) yield* kv.set(stateKey, plan.complexity)
         system.push(SystemPart.make(
           "[Jarvis runtime execution guidance: " + plan.complexity +
           " reasoning depth, " + plan.budgetSeconds +
           " second SOFT worker progress checkpoint; " + plan.reason +
+          (plan.requiresConfirmation ? ". High-risk action: request actual approval before external changes." : "") +
           ". Use fast direct actions when safe, verify outcomes; never invent model thinking settings or cancel work at the checkpoint.]",
         ))
       }
