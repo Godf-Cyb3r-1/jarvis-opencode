@@ -45,6 +45,7 @@ import { launchBrowserURL } from "../jarvis/quick-action.js"
 import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
 import { scopedTools } from "../jarvis/tool-scope.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
+import { scopeShellFirst } from "../jarvis/command-first.js"
 import { classifyTurn } from "../jarvis/chat-classifier.js"
 import { expressionContext } from "../jarvis/expression-governor.js"
 import { getWorkerAdapter } from "../jarvis/worker-bridge.js"
@@ -403,6 +404,23 @@ export const layer = Layer.effect(
           (routedWorkerAction ? ". Actual dispatch outcome: " + routedWorkerAction +
             ". Narrate it; do not dispatch again." : "") +
           ". Never await worker completion in the conversation lane. [/Jarvis live conversation routing]",
+        ))
+      }
+      // For explicit terminal commands, expose the real shell instead of a
+      // competing swarm of worker/browser tools. Native shell permissions and
+      // host-vs-Instabox routing remain authoritative on execution.
+      const shellFirst = jarvisRequest && kind === "primary"
+        ? scopeShellFirst(hooked, lastUserText)
+        : { scoped: hooked, command: undefined as string | undefined }
+      if (shellFirst.command) {
+        hooked.clear()
+        for (const [name, definition] of shellFirst.scoped) hooked.set(name, definition)
+        system.push(SystemPart.make(
+          "[Explicit command request] Use the registered shell tool FIRST for: " +
+          shellFirst.command +
+          ". Respect the native permission prompt and host/Instabox restrictions. " +
+          "Check command exit status before claiming completion; do not delegate first. " +
+          "[/Explicit command request]",
         ))
       }
       const registeredTools = [...hooked.keys()]
