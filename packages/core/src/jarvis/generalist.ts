@@ -12,13 +12,13 @@ export interface GeneralistInput {
  highComplexity?:boolean
 }
 export type GeneralistResult={
- status:"completed"|"failed"|"blocked"|"skipped";report?:ExecutionReport;
+ status:"completed"|"failed"|"blocked"|"skipped"|"delegated";report?:ExecutionReport;
  cache:"exact"|"warm"|"miss";detail:string;plannerCalls:number
 }
 const root="jarvis:v5:turn:"
 const stateKey=(v:GeneralistInput)=>root+v.sessionID+":"+v.turn
 const record=(v:unknown):v is GeneralistResult=>
- !!v&&typeof v==="object"&&["completed","failed","blocked","skipped"].includes((v as GeneralistResult).status)
+ !!v&&typeof v==="object"&&["completed","failed","blocked","skipped","delegated"].includes((v as GeneralistResult).status)
 /** Calls the weak planner on first-use only. Cached plans execute without any
  * planner request. The primitive executor, not the model, enforces permissions.
  */
@@ -40,6 +40,18 @@ export async function runGeneralistTurn(input:GeneralistInput):Promise<Generalis
   catch{await invalidatePlan(input.kv,fp)}
  }
  const nearest=proposed?[proposed]:await nearestPlans(input.kv,fp,cap)
+ const delegate=async(reason:string):Promise<GeneralistResult|undefined>=>{
+  if(!input.context?.onWorker)return undefined
+  const sent=await input.context.onWorker("worker.delegate",{
+   instruction:input.task+"\n\n[Jarvis generalist planner evidence]\n"+reason+
+    "\nUse actual tools, verify the result, respect user approvals, and report evidence.",
+   title:input.task.slice(0,65),
+  })
+  if(!sent.ok)return undefined
+  return {status:"delegated",cache,plannerCalls,
+   detail:"A verified worker session was "+String((sent.data as {status?:string}|undefined)?.status??"created")+
+     ". "+sent.evidence.join("; ")+". The task itself is not yet complete."}
+ }
  const generate=async(revise?:{step:Step;error:string;evidence:string[]},retryCorrection=false)=>{
   const prompt=plannerPrompt({
    task:input.task,capabilities:input.capabilities,recent:input.recent??[],
@@ -54,8 +66,8 @@ export async function runGeneralistTurn(input:GeneralistInput):Promise<Generalis
   catch(error){
    try{proposed=parsePlan(await generate(undefined,true),maxSteps)}
    catch(second){
-    const result:GeneralistResult={status:"blocked",cache:"miss",plannerCalls,
-      detail:"Planner could not produce valid JSON: "+String(second)}
+    const reason="Planner could not produce valid JSON after a repair and one corrective retry: "+String(second)
+    const result:GeneralistResult=(await delegate(reason))??{status:"blocked",cache:"miss",plannerCalls,detail:reason}
     await input.kv.set(key,result)
     return result
    }
@@ -100,6 +112,17 @@ export async function runGeneralistTurn(input:GeneralistInput):Promise<Generalis
   // Cache only after every step passed its deterministic verifier. Never
   // learn from a URL launch as if it proved content or playback.
   await learnPlan(input.kv,fp,plan,cap,report.elapsedMs)
+ }
+ if(!report.ok && !/confirmation required|permission denied|declined|needs approval/i.test(report.error??"")){
+  const action=report.records.at(-1)?.step.onFail
+  if(action==="delegate"){
+   const delegated=await delegate(report.error??"Generic step verification failed")
+   if(delegated){
+    delegated.report=report
+    await input.kv.set(key,delegated)
+    return delegated
+   }
+  }
  }
  const result:GeneralistResult={
   status:report.ok?"completed":"failed",cache,report,plannerCalls,
