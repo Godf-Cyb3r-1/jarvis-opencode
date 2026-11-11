@@ -1,5 +1,4 @@
-import { access } from "node:fs/promises"
-import { executePrimitive, isDestructive, type PrimitiveContext, type PrimitiveResult } from "./primitives/index.js"
+import { executePrimitive, type PrimitiveContext, type PrimitiveResult } from "./primitives/index.js"
 import type { Plan, Step } from "./planner.js"
 
 export type StepRecord={step:Step;result:PrimitiveResult;verified:boolean;attempts:number;elapsedMs:number}
