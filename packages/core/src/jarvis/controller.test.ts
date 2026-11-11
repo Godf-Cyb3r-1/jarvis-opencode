@@ -5,10 +5,10 @@ const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 describe("Jarvis controller protection", () => {
   test("brain can directly call permission-guarded shell and orchestration tools", () => {
-    for (const name of ["session_create", "session_peek", "agent_list", "memory_find", "shell"]) {
+    for (const name of ["session_create", "session_peek", "agent_list", "memory_find", "shell", "bash", "write", "edit", "apply_patch", "execute", "read"]) {
       expect(canUseBrainTool(name)).toBe(true)
     }
-    for (const name of ["bash", "read", "write", "edit", "apply_patch", "task", "unknown"]) {
+    for (const name of ["task", "unknown"]) {
       expect(canUseBrainTool(name)).toBe(false)
     }
   })
@@ -34,7 +34,8 @@ describe("bounded worker orchestration", () => {
     expect(q.runningCount).toBe(0)
   })
   test("rejects duplicate IDs and invalid concurrency", () => {
-    expect(() => new JarvisScheduler(5, async () => {})).toThrow()
+    expect(() => new JarvisScheduler(17, async () => {})).toThrow()
+    expect(() => new JarvisScheduler(8, async () => {})).not.toThrow()
     const q = new JarvisScheduler(1, async () => {})
     q.enqueue({ id: "x", input: 1 })
     expect(() => q.enqueue({ id: "x", input: 2 })).toThrow()
