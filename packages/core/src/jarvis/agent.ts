@@ -31,6 +31,12 @@ export const permissions = [
   { action: "shell", resource: "git status*", effect: "allow" },
   { action: "shell", resource: "git diff*", effect: "allow" },
   { action: "shell", resource: "git log*", effect: "allow" },
+  // Destructive system operations are exceptional; only these still ask.
+  { action: "shell", resource: "rm -rf*", effect: "ask" },
+  { action: "shell", resource: "format *", effect: "ask" },
+  { action: "shell", resource: "diskpart*", effect: "ask" },
+  { action: "bash", resource: "rm -rf*", effect: "ask" },
+
   { action: "agent_list", resource: "*", effect: "allow" },
   { action: "instabox_status", resource: "*", effect: "allow" },
   { action: "model_list", resource: "*", effect: "allow" },
