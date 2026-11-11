@@ -44,6 +44,7 @@ import { planExecution } from "../jarvis/fast-path.js"
 import { probeCapabilities, firstPersonCapabilities } from "../jarvis/capability-probe.js"
 import { runGeneralistTurn } from "../jarvis/generalist.js"
 import { isGeneralistAction } from "../jarvis/admission.js"
+import { expressionContext } from "../jarvis/expression-governor.js"
 import { callGeneralistWorker } from "../jarvis/worker-bridge.js"
 import type { KVLike } from "../jarvis/plan-cache.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
@@ -359,12 +360,14 @@ export const layer = Layer.effect(
         : undefined
       if (machine) system.push(SystemPart.make(firstPersonCapabilities(machine)))
       let verifiedGeneralist = false
+      let generalistAttempted = false
       if (jarvisRequest && kind === "primary" && machine && Option.isSome(kvOption)) {
         const llmOption = yield* Effect.serviceOption(LLMClient.Service)
         const userTurn = input.messages.filter((message) => message.role === "user").length
         const prompt = lastUserText.trim()
         const actionRequest = isGeneralistAction(prompt)
         if (actionRequest && Option.isSome(llmOption)) {
+          generalistAttempted = true
           const kv = kvOption.value
           const store: KVLike = {
             get: (key) => Effect.runPromise(kv.get(key)),
@@ -400,6 +403,10 @@ export const layer = Layer.effect(
             },
           }))
           verifiedGeneralist = outcome.status === "completed"
+          yield* kv.set("jarvis:expression:context:v4:"+String(session.id),{
+            context:expressionContext(lastUserText,{id:"generalist",success:verifiedGeneralist}),
+            turn:userTurn,
+          })
           const evidence = outcome.report?.records.map(record=>({
             operation:record.step.primitive,verified:record.verified,
             evidence:record.result.evidence.slice(0,3),
@@ -416,6 +423,19 @@ export const layer = Layer.effect(
             for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
           }
         }
+      }
+      if (jarvisRequest && kind === "primary" && Option.isSome(kvOption) && !generalistAttempted) {
+        yield* kvOption.value.set("jarvis:expression:context:v4:"+String(session.id),{
+          context:expressionContext(lastUserText),
+          turn:input.messages.filter(message=>message.role==="user").length,
+        })
+      }
+      // Generalist planner owns these categories. Prevent the weak model from
+      // falling back into the legacy hardcoded quick-action tool or UI tab
+      // opening when a generalist plan has already been attempted.
+      if (jarvisRequest && generalistAttempted) {
+        hooked.delete("jarvis_quick_action")
+        if (verifiedGeneralist) for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
       }
       // Jarvis evaluates work complexity per user turn, without altering
       // provider-selected model capabilities. The worker tool may pick an
