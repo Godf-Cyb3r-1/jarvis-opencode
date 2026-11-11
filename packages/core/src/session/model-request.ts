@@ -43,6 +43,7 @@ import { planExecution } from "../jarvis/fast-path.js"
 import { actionToken } from "../jarvis/capability-preflight.js"
 import { launchBrowserURL } from "../jarvis/quick-action.js"
 import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
+import { planShapeKey } from "../jarvis/slot-resolver.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
 import { scopeShellFirst } from "../jarvis/command-first.js"
 import { classifyTurn } from "../jarvis/chat-classifier.js"
@@ -413,7 +414,15 @@ export const layer = Layer.effect(
         ))
       }
       const registeredTools = [...hooked.keys()]
-      const matchedSkills = jarvisRequest && kind === "primary" ? matchSkills(lastUserText) : []
+      const recentUserTurns = input.messages.filter((message) => message.role === "user")
+        .slice(-9, -1).flatMap((message) => message.role === "user"
+          ? [message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")]
+          : [])
+      const preference = itemsOf(session.metadata).find((item) =>
+        /preferred_language\s*[:=]/i.test(item.text))?.text.match(/preferred_language\s*[:=]\s*([\p{L}]+)/iu)?.[1]
+      const matchedSkills = jarvisRequest && kind === "primary"
+        ? matchSkills(lastUserText,{recentUserTurns,preferences:preference?{preferred_language:preference}:{}})
+        : []
       const skillResults: SkillResult[] = []
       if (jarvisRequest && kind === "primary") {
         // Admission before LLM: deterministic match, real OS action, idempotent
@@ -429,7 +438,7 @@ export const layer = Layer.effect(
               result = saved as SkillResult
             } else {
               // Reserve the turn first so retries cannot open duplicate tabs.
-              result = { id: match.id, success: false, detail: "Action was previously attempted but not confirmed.", elapsedMs: 0 }
+              result = { id: match.id, success: false, verified: false, detail: "Action was previously attempted but not confirmed.", elapsedMs: 0 }
               yield* kv.set(key, result as KV.Value)
               result = yield* Effect.promise(() => executeSkill(match, {
                 launch: (url) => launchBrowserURL(url),
@@ -453,6 +462,12 @@ export const layer = Layer.effect(
               yield* kv.set(key, result as KV.Value)
             }
             skillResults.push(result)
+            // Only independently verified outcomes populate cross-turn plans.
+            const cacheKey = "jarvis:verified-plan:v4:" + planShapeKey(match.id,match.slots)
+            if (result.verified) yield* kv.set(cacheKey,{ id:match.id, slots:match.slots, detail:result.detail })
+            yield* Effect.logInfo("jarvis.v4.admission.outcome",{
+              sessionID:String(session.id),intent:match.id,matched:true,executed:result.success,verified:result.verified,
+            })
             if (result.success && result.elapsedMs > 0) {
               const latencyKey = "jarvis:skill:latency:v4:" + match.id
               const previous = yield* kv.get(latencyKey)
@@ -463,15 +478,32 @@ export const layer = Layer.effect(
             }
           }
         }
-        // Preserve all available tools: deterministic execution is a fast path,
-        // not an artificial constraint on follow-up verification or workers.
-        // The skill result is already in context, so do not re-execute it.
+        const blockedSlots = matchedSkills.flatMap((match) => match.missingSlots ?? [])
+        const completed = matchedSkills.length>0 && skillResults.length===matchedSkills.length &&
+          skillResults.every((result)=>result.success)
+        const clarification = blockedSlots.length>0
+        // Only completed/clarification turns restrict the model: on any unmatched
+        // task Jarvis retains its complete shell/MCP/browser/worker inventory.
+        if (completed || clarification) {
+          for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
+          system.push(SystemPart.make(completed
+            ? "[Jarvis narration-only] An action was already attempted with the original user text. " +
+              "Acknowledge the attached FACT in no more than twelve words. Do not re-execute, " +
+              "repeat a greeting/opener, or ask an unsolicited follow-up. The browser launch is " +
+              "not proof of playback or navigation. [/Jarvis narration-only]"
+            : "[Jarvis missing slot] Ask only one question: Which language? Do not call tools. [/Jarvis missing slot]"))
+        } else if (!matchedSkills.length) {
+          system.push(SystemPart.make("[Jarvis unhandled raw request] Any free-text action tool call must carry " +
+            "the user's original wording, not an invented paraphrase. The execution-time guard checks it. " +
+            "Raw user request: "+lastUserText+" [/Jarvis unhandled raw request]"))
+        }
         system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
         if (matchedSkills.length) {
           system.push(SystemPart.make(
             "[Deterministic skill admission]\n" +
             matchedSkills.map((match, i) =>
               match.id + ": " + (skillResults[i]?.success ? "EXECUTED" : "NOT CONFIRMED") +
+              ", verified: "+(skillResults[i]?.verified===true) +
               ", detail: " + (skillResults[i]?.detail ?? "No execution available") +
               ". Narration hint: " + match.narrationHint,
             ).join("\n") +
@@ -679,7 +711,10 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: input.toolChoice,
+        toolChoice: jarvisRequest && kind === "primary" && matchedSkills.length &&
+          (skillResults.length===matchedSkills.length && skillResults.every(result=>result.success) ||
+           matchedSkills.some(match=>!!match.missingSlots?.length))
+          ? {type:"none"} : input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
       })
