@@ -6,9 +6,11 @@ export type SkillID = "play.media.search" | "open.url" | "open.app" | "search.we
 export type SkillSlots = { text: string; url?: string; app?: string; query?: string }
 export type SkillResult = { id: SkillID; success: boolean; detail: string; elapsedMs: number }
 export type Match = { id: SkillID; confidence: number; slots: SkillSlots; closesToolScopes: SkillScope[]; narrationHint: string }
+export type SkillActions = { launch: (url: string) => Promise<string>; workers: () => Promise<string>; greeting?: () => Promise<string> }
 export type SkillDefinition = {
   id: SkillID
   match: (input: string) => { confidence: number; slots: SkillSlots } | undefined
+  execute: (slots: SkillSlots, actions: SkillActions) => Promise<string>
   closesToolScopes: SkillScope[]
   narrationHint: string
 }
@@ -24,8 +26,26 @@ const isSafeURL = (input: string) => {
     return url.protocol === "https:" && !url.username && !url.password && url.hostname.includes(".")
   } catch { return false }
 }
+const weightedOverlap = (text:string, entries:readonly (readonly [RegExp,number])[]) =>
+  Math.min(0.27, entries.reduce((sum,[word,weight])=>sum+(word.test(text)?weight:0),0))
+const mediaWords = [
+  [/\b(?:song|songs|track|music)\b/i,0.16], [/\b(?:tamil|sad|happy|melody)\b|தமிழ்/i,0.07],
+  [/\b(?:pattu|paattu|paatu)\b|பாடல்|பாட்டு/i,0.20],
+] as const
 const skill = (id: SkillID, matcher: SkillDefinition["match"], closesToolScopes: SkillScope[], narrationHint: string): SkillDefinition =>
-  ({ id, match: matcher, closesToolScopes, narrationHint })
+  ({
+    id, match: matcher, closesToolScopes, narrationHint,
+    execute: async (slots,actions) => {
+      if (id === "greet") return actions.greeting ? actions.greeting() : "Hey."
+      if (id === "status.workers") return actions.workers()
+      const url = id === "play.media.search"
+        ? planQuickAction(slots.text)?.url ?? "https://www.youtube.com/results?search_query=" + encodeURIComponent(slots.query ?? "Tamil songs")
+        : id === "search.web" ? "https://www.google.com/search?q=" + encodeURIComponent(slots.query ?? "")
+        : slots.url
+      if (!url || !isSafeURL(url)) throw new Error("Skill returned an invalid URL")
+      return actions.launch(url)
+    },
+  })
 
 export const skills: readonly SkillDefinition[] = [
   skill("play.media.search", (text) => {
@@ -34,7 +54,7 @@ export const skills: readonly SkillDefinition[] = [
     const a = capture(text, /^(?:(?:jarvis|hey jarvis)[, ]+)?(?:(?:please|can you|could you)\s+)?(?:play|podu|போடு|பாடல் போடு)\s+(?<query>.+)$/i)
     const query = a?.query?.trim()
     if (!query || !/(song|music|paattu|pattu|பாடல்|பாட்டு|தமிழ்|tamil)/i.test(query)) return
-    return { confidence: 0.82, slots: { text, query } }
+    return { confidence: Math.min(0.97, 0.70 + weightedOverlap(query, mediaWords)), slots: { text, query } }
   }, ["MEDIA", "WEB", "WORKER"], "Describe the browser launch only. Do not claim audible playback."),
   skill("open.url", (text) => {
     const url = capture(text, /^(?:please\s+)?(?:open|launch|திற|thira)\s+(?<url>https:\/\/\S+)$/i)?.url
@@ -73,20 +93,14 @@ export function matchSkills(text: string): Match[] {
 }
 export async function executeSkill(
   match: Match,
-  actions: { launch: (url: string) => Promise<string>; workers: () => Promise<string> },
+  actions: SkillActions,
   timeoutMs = 2000,
 ): Promise<SkillResult> {
   const started = performance.now()
-  const work = async () => {
-    if (match.id === "greet") return "Greeting accepted."
-    if (match.id === "status.workers") return actions.workers()
-    const url = match.id === "play.media.search"
-      ? planQuickAction(match.slots.text)?.url ?? "https://www.youtube.com/results?search_query=" + encodeURIComponent(match.slots.query ?? "Tamil songs")
-      : match.id === "search.web"
-        ? "https://www.google.com/search?q=" + encodeURIComponent(match.slots.query ?? "")
-        : match.slots.url
-    if (!url || !isSafeURL(url)) throw new Error("Skill returned an invalid URL")
-    return actions.launch(url)
+  const entry = skills.find((candidate) => candidate.id === match.id)
+  const work = () => {
+    if (!entry) throw new Error("Unknown registered skill: " + match.id)
+    return entry.execute(match.slots, actions)
   }
   try {
     // Promise.race guarantees admission proceeds, even when OS/browser hooks stall.
