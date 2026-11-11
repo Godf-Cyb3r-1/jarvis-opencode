@@ -15,6 +15,6 @@ export function scopeShellFirst<T>(registered: Map<string,T>, userText: string):
   if (!command || !registered.has("shell")) return {scoped:registered}
   return {
     command,
-    scoped: registered,
+    scoped: new Map([...registered].filter(([name]) => name === "shell" || name === "read" || name === "question")),
   }
 }
