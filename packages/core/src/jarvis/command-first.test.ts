@@ -8,7 +8,7 @@ test("explicit commands route to native shell before workers",()=>{
  for(const input of ["run pwd","execute command: git status","terminal: whoami","shell: git diff"]) {
   const route=scopeShellFirst(tools,input)
   expect(route.command).toBeTruthy()
-  expect([...route.scoped.keys()]).toEqual([...tools.keys()])
+  expect([...route.scoped.keys()]).toEqual(["shell","read","question"])
  }
  expect([...scopeShellFirst(tools,"build an application").scoped.keys()]).toEqual([...tools.keys()])
  expect(explicitShellRequest("how are you?")).toBeUndefined()
@@ -18,5 +18,5 @@ test("Jarvis command permissions preserve native approvals",()=>{
  expect(Permission.evaluate("shell","pwd",rules).effect).toBe("allow")
  expect(Permission.evaluate("shell","git status",rules).effect).toBe("allow")
  expect(Permission.evaluate("shell","rm -rf /",rules).effect).toBe("ask")
- expect(Permission.evaluate("write","file",rules).effect).toBe("allow")
+ expect(Permission.evaluate("write","file",rules).effect).toBe("ask")
 })
