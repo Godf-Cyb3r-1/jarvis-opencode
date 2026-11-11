@@ -4,11 +4,11 @@
 export const JARVIS_CONTROL_TOOLS = [
   "session_create", "session_send", "session_status", "session_peek",
   "session_interrupt", "session_switch_agent", "session_switch_model",
-  "session_compact", "command_run", "agent_list", "agent_create",
+  "session_compact", "command_run", "shell", "agent_list", "agent_create",
   "plugin_create", "model_list", "model_pick", "memory_find", "memory_read",
 ] as const
 
-/** Fail closed: the conversational brain cannot access ordinary code/file/shell tools. */
+/** Fail closed for mutation; native shell calls are supported with permissions and user approvals. */
 const permitted = new Set<string>(JARVIS_CONTROL_TOOLS)
 export function canUseBrainTool(tool: string): boolean {
   return permitted.has(tool)
