@@ -6,7 +6,7 @@ import persona from "../../../../jarvis/persona.md" with { type: "text" }
 export const ID = Agent.ID.make("jarvis")
 
 /** The free-tier gateway needs an advertised inspection tool.
- * Allow direct shell commands with native OpenCode permission prompts; keep code mutation denied.
+ * Allow command execution and file edits using OpenCode's existing permission system.
  * Last matching policy wins in OpenCode's Permission.evaluate.
  */
 export const permissions = [
@@ -15,9 +15,14 @@ export const permissions = [
   { action: "glob", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
   { action: "question", resource: "*", effect: "allow" },
-  // The brain may execute ordinary shell commands itself before spawning a worker.
-  // Unknown commands always require an explicit permission decision.
-  { action: "shell", resource: "*", effect: "ask" },
+  // Direct command execution is available to Jarvis; avoid repeated approval
+  // prompts for ordinary commands. Inherited session/user declines still apply.
+  { action: "shell", resource: "*", effect: "allow" },
+  { action: "bash", resource: "*", effect: "allow" },
+  { action: "write", resource: "*", effect: "allow" },
+  { action: "edit", resource: "*", effect: "allow" },
+  { action: "apply_patch", resource: "*", effect: "allow" },
+  { action: "execute", resource: "*", effect: "allow" },
   { action: "shell", resource: "pwd", effect: "allow" },
   { action: "shell", resource: "whoami", effect: "allow" },
   { action: "shell", resource: "hostname", effect: "allow" },
