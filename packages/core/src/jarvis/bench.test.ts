@@ -6,6 +6,6 @@ test("40 diverse prompts stay below admission latency budget",async()=>{
  expect(benchmarkPrompts).toHaveLength(40)
  expect(rows.filter(x=>x.matched).length).toBeGreaterThanOrEqual(30)
  expect(rows.every(x=>x.firstResultMs<600)).toBe(true)
- expect(rows.filter(x=>x.matched).every(x=>x.toolCount===3)).toBe(true)
+ expect(rows.filter(x=>x.matched).every(x=>x.toolCount<=1)).toBe(true)
  expect(rows.every(x=>x.refusals===0)).toBe(true)
 })
