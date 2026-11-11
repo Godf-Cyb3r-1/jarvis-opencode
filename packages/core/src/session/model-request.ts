@@ -44,6 +44,7 @@ import { actionToken } from "../jarvis/capability-preflight.js"
 import { launchBrowserURL } from "../jarvis/quick-action.js"
 import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
 import { planShapeKey } from "../jarvis/slot-resolver.js"
+import { admissionReport, narrationInstructions } from "../jarvis/admission-policy.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
 import { scopeShellFirst } from "../jarvis/command-first.js"
 import { classifyTurn } from "../jarvis/chat-classifier.js"
@@ -480,25 +481,12 @@ export const layer = Layer.effect(
             }
           }
         }
-        const blockedSlots = matchedSkills.flatMap((match) => match.missingSlots ?? [])
-        const completed = matchedSkills.length>0 && skillResults.length===matchedSkills.length &&
-          skillResults.every((result)=>result.success)
-        const clarification = blockedSlots.length>0
-        // Only completed/clarification turns restrict the model: on any unmatched
-        // task Jarvis retains its complete shell/MCP/browser/worker inventory.
-        if (completed || clarification) {
-          for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
-          system.push(SystemPart.make(completed
-            ? "[Jarvis narration-only] An action was already attempted with the original user text. " +
-              "Acknowledge the attached FACT in no more than twelve words. Do not re-execute, " +
-              "repeat a greeting/opener, or ask an unsolicited follow-up. The browser launch is " +
-              "not proof of playback or navigation. [/Jarvis narration-only]"
-            : "[Jarvis missing slot] Ask only one question: Which language? Do not call tools. [/Jarvis missing slot]"))
-        } else if (!matchedSkills.length) {
-          system.push(SystemPart.make("[Jarvis unhandled raw request] Any free-text action tool call must carry " +
-            "the user's original wording, not an invented paraphrase. The execution-time guard checks it. " +
-            "Raw user request: "+lastUserText+" [/Jarvis unhandled raw request]"))
-        }
+        const state=admissionReport(matchedSkills,skillResults)
+        if(state.narrationOnly)
+          for(const name of [...hooked.keys()])if(name!=="read")hooked.delete(name)
+        system.push(SystemPart.make(narrationInstructions(state,skillResults)))
+        if(!matchedSkills.length)
+          system.push(SystemPart.make("[Raw user text for tool arguments] "+lastUserText))
         system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
         if (matchedSkills.length) {
           system.push(SystemPart.make(
@@ -713,9 +701,7 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: jarvisRequest && kind === "primary" && matchedSkills.length &&
-          (skillResults.length===matchedSkills.length && skillResults.every(result=>result.success) ||
-           matchedSkills.some(match=>!!match.missingSlots?.length))
+        toolChoice: jarvisRequest && kind === "primary" && admissionReport(matchedSkills,skillResults).narrationOnly
           ? {type:"none"} : input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
