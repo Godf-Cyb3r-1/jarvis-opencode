@@ -463,8 +463,6 @@ export const layer = Layer.effect(
             }
           }
         }
-        const allSucceeded = matchedSkills.length > 0 && skillResults.length === matchedSkills.length &&
-          skillResults.every((result) => result.success)
         // Preserve all available tools: deterministic execution is a fast path,
         // not an artificial constraint on follow-up verification or workers.
         // The skill result is already in context, so do not re-execute it.
