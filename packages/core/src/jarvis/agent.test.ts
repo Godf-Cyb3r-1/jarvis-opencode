@@ -13,6 +13,9 @@ test("Jarvis is registered as a primary non-developer assistant with the version
   for (const tool of ["read", "glob", "grep", "question"]) {
     expect(Permission.evaluate(tool, "some/path", info.permissions).effect).toBe("allow")
   }
+  expect(Permission.evaluate("shell", "pwd", info.permissions).effect).toBe("allow")
+  expect(Permission.evaluate("shell", "git status", info.permissions).effect).toBe("allow")
+  expect(Permission.evaluate("shell", "rm -rf /", info.permissions).effect).toBe("ask")
   for (const tool of ["bash", "write", "edit", "apply_patch", "task", "execute"]) {
     expect(Permission.evaluate(tool, "*", info.permissions).effect).toBe("deny")
   }
