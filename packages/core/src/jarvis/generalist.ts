@@ -1,7 +1,7 @@
-import { fingerprint, lookupPlan, learnPlan, invalidatePlan, type KVLike } from "./plan-cache.js"
+import { fingerprint, lookupPlan, learnPlan, invalidatePlan, nearestPlans, type KVLike } from "./plan-cache.js"
 import { validatePlan, parsePlan, plannerPrompt, type Plan, type Step } from "./planner.js"
 import { executePlan, type ExecutionReport } from "./executor.js"
-import type { PrimitiveContext } from "./primitives/index.js"
+import { isSideEffectful, type PrimitiveContext } from "./primitives/index.js"
 import type { MachineCapabilities } from "./capability-probe.js"
 
 export interface GeneralistInput {
@@ -39,10 +39,11 @@ export async function runGeneralistTurn(input:GeneralistInput):Promise<Generalis
   try{proposed=validatePlan(direct.plan,maxSteps);cache=direct.hit}
   catch{await invalidatePlan(input.kv,fp)}
  }
+ const nearest=proposed?[proposed]:await nearestPlans(input.kv,fp,cap)
  const generate=async(revise?:{step:Step;error:string;evidence:string[]},retryCorrection=false)=>{
   const prompt=plannerPrompt({
    task:input.task,capabilities:input.capabilities,recent:input.recent??[],
-   examples:proposed?[proposed]:undefined,
+   examples:proposed?[proposed]:nearest,
    maxSteps, ...(revise?{revise}:{}),
   })+(retryCorrection?"\nYour previous output was not valid JSON. Respond with only strictly valid JSON.":"")
   plannerCalls++
@@ -60,7 +61,7 @@ export async function runGeneralistTurn(input:GeneralistInput):Promise<Generalis
    }
   }
  }
- const plan=proposed!
+ let plan=proposed!
  let report:ExecutionReport
  try{
   report=await executePlan(plan,{
@@ -78,8 +79,22 @@ export async function runGeneralistTurn(input:GeneralistInput):Promise<Generalis
  }
  if(!report.ok&&cache!=="miss"){
   await invalidatePlan(input.kv,fp)
-  // Cached plan failed; bounded reflexion was handled by executor.
-  // Avoid replaying side effects in a second full plan on this turn.
+  // If the cached plan performed any verified side-effect, do not repeat it.
+  // Otherwise one corrective planner pass is allowed, within the overall
+  // two-reflexion budget, then cache the new plan only after verification.
+  const irreversible=report.records.some(record=>record.verified && isSideEffectful(record.step.primitive))
+  if(!irreversible&&report.reflexionRounds<2){
+   try {
+    plan=parsePlan(await generate({
+      step:report.records.at(-1)?.step??plan.steps[0]!,
+      error:report.error??"Cached plan failed verification",
+      evidence:report.records.at(-1)?.result.evidence??[],
+    }),maxSteps)
+    report=await executePlan(plan,{
+      context:input.context,maxReflexions:Math.max(0,2-report.reflexionRounds),
+    })
+   }catch{ /* preserve original verified evidence and stop */ }
+  }
  }
  if(report.ok){
   // Cache only after every step passed its deterministic verifier. Never
