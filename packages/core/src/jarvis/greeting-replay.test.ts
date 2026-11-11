@@ -46,6 +46,7 @@ test("greeting short-circuits duplicate opener and prunes real tool schema",asyn
  expect([...narrationTools(new Map([["read",1],["session_create",2],["jarvis_quick_action",3]]),state).keys()]).toEqual(["read"])
  const spoken=stripDuplicateOpener("Vanakkam. What's going on?","Vanakkam.")
  expect(spoken).toBe("What's going on?")
+ expect(verifiedNarration("Hey. What's going on?",results,"Vanakkam.")).toBe("Vanakkam. What's going on?")
  expect(continuationText("Vanakkam. What's going on?","Vanakkam.")).toBe("What's going on?")
 })
 test("verified plan cache gate excludes an unverified browser launch",()=>{
