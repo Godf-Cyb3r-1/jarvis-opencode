@@ -338,13 +338,6 @@ export const layer = Layer.effect(
         const inspection = tools.definitions.find((definition) => definition.name === "read")
         if (inspection) hooked.set("read", inspection)
       }
-      // Opt-in differential probe: isolate whether extra controller tools
-      // are rejected by a gateway, without permanently disabling delegation.
-      if (jarvisRequest && process.env.JARVIS_GATEWAY_TOOL_PROFILE === "inspection") {
-        for (const name of hooked.keys()) {
-          if (!["read", "glob", "grep", "question"].includes(name)) hooked.delete(name)
-        }
-      }
       // Use the pre-hook system parts as the source of OpenCode's built-in
       // date/environment context: hooks may replace the whole system array,
       // but the free gateway still needs the environment block.
