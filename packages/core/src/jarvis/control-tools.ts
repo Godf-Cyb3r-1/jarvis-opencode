@@ -417,6 +417,7 @@ export const Plugin = {
                   input.instruction,
                   "",
                   "[Jarvis worker contract]",
+                  "windows-mcp browser_tabs_* and ui_click tools are for actual UI interaction only; clicking/filling/DOM reading. For a simple URL launch/search use jarvis_quick_action, never browser_tabs_open if the quick action supports it.",
                   "Complexity: " + plan.complexity + "; soft checkpoint: " + plan.budgetSeconds + " seconds.",
                   "Start with the smallest concrete action. Verify results, avoid unnecessary exploration.",
                   "If work extends past the checkpoint, keep working and report verified progress.",
