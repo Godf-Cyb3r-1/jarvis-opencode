@@ -126,7 +126,6 @@ export const Plugin = {
     // The bridge is registered at controller initialization and validates parent
     // ownership on every call. It never lets a planner bypass worker permissions.
     registerGeneralistWorkerBridge(async (parentID, operation, args) => {
-      const evidence:string[] = []
       try {
         const parent = SessionSchema.ID.make(parentID)
         const owner = await Effect.runPromise(sessions.get(parent))
