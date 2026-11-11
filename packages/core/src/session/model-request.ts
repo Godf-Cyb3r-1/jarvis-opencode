@@ -378,7 +378,7 @@ export const layer = Layer.effect(
                 workers: async () => {
                   if (Option.isNone(sessionService)) return "Worker status service not available; status not verified."
                   const service = sessionService.value
-                  const children = yield* Effect.runPromise(service.list({ parentID: session.id, limit: 100 }))
+                  const children = await Effect.runPromise(service.list({ parentID: session.id, limit: 100 }))
                   return children.data.length
                     ? children.data.map((child) => child.title + ": " + (child.outcome ? "finished" : "in progress or idle")).join("; ")
                     : "No worker sessions found."
