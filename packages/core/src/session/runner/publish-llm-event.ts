@@ -29,6 +29,7 @@ type Input = {
   readonly pendingSnapshot?: Effect.Effect<Snapshot.ID | undefined>
   readonly started: number
   readonly assistantMessageID: SessionMessage.ID
+  readonly retryJarvisRefusal?: (text: string) => Effect.Effect<string | undefined>
 }
 
 const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : { value })
@@ -262,6 +263,10 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
                 removed: clean.removed,
               })
             }
+          }
+          if (name === "text" && input.agent === "jarvis" && input.retryJarvisRefusal) {
+            const retried = yield* input.retryJarvisRefusal(content)
+            if (retried?.trim()) content = normalizeJarvisText(retried).text
           }
           yield* bus.publish(events.Ended, {
             sessionID: input.sessionID,
