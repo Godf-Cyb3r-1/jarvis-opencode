@@ -34,3 +34,21 @@ export function continuationText(text:string,emittedOpener:string):string {
  const first=words[0]?.replace(/[.!?]+$/,"").toLowerCase()
  return (first===opener?words.slice(1):words).slice(0,12).join(" ")
 }
+
+/** Deterministic final-result rendering protects against fabricated completion
+ * on an otherwise narration-only provider call.
+ */
+export function verifiedNarration(
+  generated:string,results:readonly SkillResult[], emittedOpener?:string,
+):string {
+  const final=results.at(-1)
+  if(!final)return generated
+  if(final.id==="greet"){
+    const base=(emittedOpener || final.detail).trim()
+    const tail=continuationText(generated,base).replace(/^(?:hi|hey|hello|vanakkam)[.!?,\\s]*/i,"").trim()
+    return base+(tail?" "+tail:"")
+  }
+  if(!final.success)return "The action could not be completed: "+final.detail
+  if(!final.verified)return final.detail.split(/\s+/).slice(0,20).join(" ")
+  return generated.split(/\s+/).slice(0,12).join(" ")
+}
