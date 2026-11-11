@@ -11,7 +11,7 @@ test("multilingual deterministic matches and no partial multi-intent actions", (
     ["search for security papers","search.web"],
     ["வணக்கம்","greet"],
     ["enna nadakuthu","status.workers"],
-  ]) expect(matchSkill(prompt)?.id).toBe(skill)
+  ] as const) expect(matchSkill(prompt)?.id).toBe(skill)
   expect(matchSkills("open github then search for laptop")).toHaveLength(2)
   expect(matchSkills("open github then blow up something")).toHaveLength(0)
   expect(matchSkill("write a program to play videos")).toBeUndefined()
