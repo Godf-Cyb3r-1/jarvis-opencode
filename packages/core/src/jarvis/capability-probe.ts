@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
 import { createHash } from "node:crypto"
 export type MachineCapabilities={
  os:string;display:boolean;browser:string|null;players:string[];
