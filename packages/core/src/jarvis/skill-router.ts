@@ -71,7 +71,7 @@ export const skills: readonly SkillDefinition[] = [
     if (!query || query.length > 220 || /[\n\r<>]/.test(query)) return
     return { confidence: 0.94, slots: { text, query } }
   }, ["WEB", "WORKER"], "Report that a search was launched, not that search results were read."),
-  skill("greet", (text) => /^(?:(?:hey|hi)\s+jarvis[,!]?)?\s*(?:hi|hey|hello|vanakkam|வணக்கம்)[!. ]*$/i.test(text)
+  skill("greet", (text) => (/^(?:(?:hey|hi)\s+jarvis[,!]?)?\s*(?:hi|hey|hello|vanakkam|வணக்கம்)[!. ]*$/i.test(text) || /^(?:hey|hi|hello)\s+jarvis[!. ]*$/i.test(text))
     ? { confidence: 0.99, slots: { text } } : undefined, ["MEDIA", "WEB", "WORKER"], "Use the greeting opener based on turn history."),
   skill("status.workers", (text) => /^(?:what(?:'s| is) happening|worker status|task status|enna nadak(?:k)?uthu|என்ன நடக்குது)[?! .]*$/i.test(text)
     ? { confidence: 0.95, slots: { text } } : undefined, ["MEDIA", "WEB", "WORKER"], "Use a verified worker status summary."),
