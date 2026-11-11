@@ -17,6 +17,8 @@ import { contentFilterError } from "../to-session-error.js"
 import type { Tool } from "../../tool.js"
 import { stringify } from "../../tool/runtime.js"
 import { normalizeJarvisText } from "../../jarvis/expression-policy.js"
+import { governExpression, initialGovernorState, type GovernorState } from "../../jarvis/expression-governor.js"
+import { KV } from "../../kv.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -239,6 +241,25 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           if (name === "text" && input.agent === "jarvis") {
             const clean = normalizeJarvisText(content, { alreadyUsed: jarvisExpressionUsed })
             content = clean.text
+            const kvOption = yield* Effect.serviceOption(KV.Service)
+            if (kvOption._tag === "Some") {
+              const key = "jarvis:expression:v4:" + String(input.sessionID)
+              const raw = yield* kvOption.value.get(key)
+              const saved = raw && typeof raw === "object" && !Array.isArray(raw)
+                ? raw as GovernorState & { turn?: number } : undefined
+              const ctx = yield* kvOption.value.get("jarvis:expression:context:v4:" + String(input.sessionID))
+              const observed = ctx && typeof ctx === "object" && !Array.isArray(ctx)
+                ? ctx as { context?: string; turn?: number } : undefined
+              const now = Date.now()
+              const turn = observed?.turn ?? (saved?.turn ?? 0) + 1
+              const allowed = ["greeting","action","agreement","thought","negative","neutral"]
+              const context = observed?.context && allowed.includes(observed.context)
+                ? observed.context as "greeting"|"action"|"agreement"|"thought"|"negative"|"neutral"
+                : "neutral"
+              const governed = governExpression(content,context,turn,now,saved??initialGovernorState())
+              content = governed.displayText
+              yield* kvOption.value.set(key,{...governed.state,turn} as KV.Value)
+            }
             if (clean.accepted) jarvisExpressionUsed = true
             if (clean.removed.length) {
               yield* Effect.logWarning("Jarvis response expression markers rejected", {

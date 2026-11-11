@@ -7,6 +7,7 @@ import {
   GenerationOptions,
   type GenerationOptionsFields,
   LanguageModel,
+  LLMClient,
   type LLM,
   type LLMRequest,
   type Media,
@@ -35,13 +36,19 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import * as JarvisAgent from "../jarvis/agent.js"
 import { KV } from "../kv.js"
+import { Mcp } from "../mcp/index.js"
 import { SessionStore } from "./store.js"
 import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { itemsOf } from "../jarvis/memory.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis/cloud-memory.js"
 import { planExecution } from "../jarvis/fast-path.js"
-import { actionToken, capabilityStatement, shouldRunMediaPreflight } from "../jarvis/capability-preflight.js"
-import { executeQuickAction } from "../jarvis/quick-action.js"
+import { probeCapabilities, firstPersonCapabilities } from "../jarvis/capability-probe.js"
+import { runGeneralistTurn } from "../jarvis/generalist.js"
+import { isGeneralistAction } from "../jarvis/admission.js"
+import { admitApproval } from "../jarvis/approval.js"
+import { expressionContext } from "../jarvis/expression-governor.js"
+import { callGeneralistWorker } from "../jarvis/worker-bridge.js"
+import { fingerprint, type CachedPlan, type KVLike } from "../jarvis/plan-cache.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -350,38 +357,119 @@ export const layer = Layer.effect(
         ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
         : ""
       const registeredTools = [...hooked.keys()]
-      if (jarvisRequest && kind === "primary") {
-        system.push(SystemPart.make(capabilityStatement(registeredTools)))
-        // A model that responds without calling tools cannot complete a simple
-        // direct action. Execute strictly allowlisted explicit media requests
-        // before generating the answer, with a durable per-turn idempotency key.
-        if (Option.isSome(kvOption) && shouldRunMediaPreflight({
-          kind, agent: String(input.agent), text: lastUserText, toolNames: registeredTools,
-        })) {
-          const key = actionToken(
-            String(session.id),
-            input.messages.filter((message) => message.role === "user").length,
-            lastUserText,
-          )
+      const mcpOption = jarvisRequest && kind === "primary"
+        ? yield* Effect.serviceOption(Mcp.Service) : Option.none<Mcp.Interface>()
+      const discoveredMcpTools = Option.isSome(mcpOption)
+        ? yield* mcpOption.value.tools().pipe(Effect.orElseSucceed(() => [] as Mcp.Tool[]))
+        : []
+      const machine = jarvisRequest && kind === "primary"
+        ? probeCapabilities({tools:[...registeredTools,...discoveredMcpTools.map(tool=>String(tool.server)+":"+String(tool.name))],
+            roots:[session.location.directory]})
+        : undefined
+      if (machine) system.push(SystemPart.make(firstPersonCapabilities(machine)))
+      let dynamicExecutionPlan: ReturnType<typeof planExecution> | undefined
+      let verifiedGeneralist = false
+      let handledGeneralist = false
+      let generalistAttempted = false
+      if (jarvisRequest && kind === "primary" && machine && Option.isSome(kvOption)) {
+        const llmOption = yield* Effect.serviceOption(LLMClient.Service)
+        const userTurn = input.messages.filter((message) => message.role === "user").length
+        const prompt = lastUserText.trim()
+        const actionRequest = isGeneralistAction(prompt)
+        if (actionRequest && Option.isSome(llmOption)) {
+          generalistAttempted = true
           const kv = kvOption.value
-          let result = yield* kv.get(key)
-          if (typeof result !== "string") {
-            // A retry or crash must not launch the same browser action again.
-            yield* kv.set(key, "The action was attempted but no result was confirmed.")
-            result = yield* Effect.promise(async () => {
-              try {
-                const opened = await executeQuickAction(lastUserText)
-                return opened.detail
-              } catch (error) {
-                return "Desktop quick action did not succeed: " + String(error)
-              }
-            })
-            yield* kv.set(key, result)
+          const store: KVLike = {
+            get: (key) => Effect.runPromise(kv.get(key)),
+            set: (key,value) => Effect.runPromise(kv.set(key, JSON.parse(JSON.stringify(value)) as KV.Value)),
+            remove: (key) => Effect.runPromise(kv.remove(key)),
+            scan: (filter) => Effect.runPromise(kv.scan(filter)),
           }
+          const fp = fingerprint(prompt)
+          const previousTierValue = yield* kv.get("jarvis:v5:tier:"+String(session.id))
+          const previousTier = ["low","medium","high","max"].includes(String(previousTierValue))
+            ? previousTierValue as "low"|"medium"|"high"|"max" : undefined
+          const previousCache = (yield* kv.get("jarvis:v5:plan:"+fp.hash)) as CachedPlan|undefined
+          const cacheUsable = !!previousCache && previousCache.machineCapabilitiesAtSave===machine.signature &&
+            Date.now()-previousCache.createdAt<30*86400_000
+          const scored = planExecution(prompt,{previous:previousTier,
+            latencies:cacheUsable?previousCache?.latenciesMs??[]:[]})
+          const tierPlan = cacheUsable && scored.risk==="normal"
+            ? {...scored,complexity:"low" as const,parallelWorkers:1}
+            : scored
+          dynamicExecutionPlan = tierPlan
+          yield* kv.set("jarvis:v5:tier:"+String(session.id),tierPlan.complexity)
+          const environment = system.slice(1).filter(part => part.text.includes("environment") || part.text.includes("date"))
+          const approval = yield* Effect.promise(() => admitApproval(store,String(session.id),prompt))
+          const outcome = approval.allowed ? yield* Effect.promise(() => runGeneralistTurn({
+            task:approval.task,sessionID:String(session.id),turn:userTurn,
+            capabilities:machine,kv:store,
+            recent:input.messages.filter(message=>message.role==="user").slice(-3)
+              .flatMap(message=>message.role==="user"
+                ?message.content.flatMap(part=>part.type==="text"?[part.text]:[]):[]),
+            highComplexity:tierPlan.complexity==="high" || tierPlan.complexity==="max",
+            plan:async (plannerText) => {
+              const planningRequest = ai.request({
+                model:model.model,
+                headers:{
+                  "x-opencode-session-id":session.id,
+                  "x-session-affinity":SessionAffinity.get(session),
+                  "X-Session-Id":SessionAffinity.get(session),
+                  "x-opencode-project":session.projectID,
+                  "User-Agent":App.useragent(app),
+                },
+                system:[SystemPart.make("Return only a JSON object for the approved generalist primitive planner. No narration."),...environment],
+                messages:[Message.user(plannerText)],
+                tools:[],
+                toolChoice:{type:"none"},
+              })
+              const generated = await Effect.runPromise(llmOption.value.generate(planningRequest,{}))
+              return generated.text
+            },
+            context:{
+              cwd:session.location.directory,
+              onWorker:(operation,args)=>callGeneralistWorker(String(session.id),operation,args),
+              onSchedule:async()=>({ok:false,error:"Schedule dispatcher is not connected",evidence:["No running scheduler"]}),
+              // Never infer user approval from an LLM-produced JSON plan.
+              confirm:async()=>approval.confirmed,
+            },
+          })) : {status:"blocked" as const,cache:"miss" as const,plannerCalls:0,
+            detail:approval.detail??"User confirmation required"}
+          verifiedGeneralist = outcome.status === "completed"
+          handledGeneralist = verifiedGeneralist || outcome.status === "delegated"
+          yield* kv.set("jarvis:expression:context:v4:"+String(session.id),{
+            context:expressionContext(lastUserText,{id:"generalist",success:verifiedGeneralist}),
+            turn:userTurn,
+          })
+          const evidence = outcome.report?.records.map(record=>({
+            operation:record.step.primitive,verified:record.verified,
+            evidence:record.result.evidence.slice(0,3),
+          })) ?? []
           system.push(SystemPart.make(
-            "[Actual media preflight result, never reinterpret or fabricate: " + result + "]",
+            "[Actual generalist execution report]\n"+
+            JSON.stringify({status:outcome.status,cache:outcome.cache,
+              plannerCalls:outcome.plannerCalls,detail:outcome.detail,evidence}).slice(0,4000)+
+            "\nReport only these observed facts; do not claim unverified playback, navigation, delivery or UI interactions. "+
+            (verifiedGeneralist?"The executor finished; do not issue competing tool calls.":outcome.status==="delegated"?"A worker was started, not completed; do not dispatch a duplicate.":"If blocked, explain the concrete blocker or dispatch a permitted independent worker.")+
+            "\n[/Actual generalist execution report]",
           ))
+          if (handledGeneralist) {
+            for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
+          }
         }
+      }
+      if (jarvisRequest && kind === "primary" && Option.isSome(kvOption) && !generalistAttempted) {
+        yield* kvOption.value.set("jarvis:expression:context:v4:"+String(session.id),{
+          context:expressionContext(lastUserText),
+          turn:input.messages.filter(message=>message.role==="user").length,
+        })
+      }
+      // Generalist planner owns these categories. Prevent the weak model from
+      // falling back into the legacy hardcoded quick-action tool or UI tab
+      // opening when a generalist plan has already been attempted.
+      if (jarvisRequest && generalistAttempted) {
+        hooked.delete("jarvis_quick_action")
+        if (handledGeneralist) for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
       }
       // Jarvis evaluates work complexity per user turn, without altering
       // provider-selected model capabilities. The worker tool may pick an
@@ -391,7 +479,7 @@ export const layer = Layer.effect(
         const requestText = latest && latest.role === "user"
           ? latest.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
           : ""
-        const plan = planExecution(requestText)
+        const plan = dynamicExecutionPlan ?? planExecution(requestText)
         system.push(SystemPart.make(
           "[Jarvis runtime execution guidance: " + plan.complexity +
           " reasoning depth, " + plan.budgetSeconds +
@@ -561,7 +649,7 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: input.toolChoice,
+        toolChoice: handledGeneralist ? { type: "none" } : input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
       })

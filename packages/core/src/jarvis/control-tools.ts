@@ -18,6 +18,8 @@ import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-m
 import { checkInstabox, runInstabox } from "./instabox-runtime.js"
 import { planExecution, preferredReasoningVariant } from "./fast-path.js"
 import { executeQuickAction } from "./quick-action.js"
+import { registerGeneralistWorkerBridge } from "./worker-bridge.js"
+import { registerWorkerAgents, probeCapabilities } from "./capability-probe.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -45,6 +47,10 @@ export const Plugin = {
     const agents = yield* Agent.Service
     const models = yield* Model.Service
     const kv = yield* KV.Service
+    const workers = (yield* agents.list()).filter(candidate=>candidate.id!==JarvisAgent.ID && !candidate.hidden)
+      .map(candidate=>String(candidate.id))
+    registerWorkerAgents(workers)
+    probeCapabilities({workers})
     const loadMemory = Effect.fn("Jarvis.CloudMemory.load")(function* (projectID: string) {
       const key = "jarvis:memory:project:" + projectID
       const local = (yield* kv.get(key)) as Record<string, unknown> | undefined
@@ -120,6 +126,61 @@ export const Plugin = {
       if (parent.agent !== JarvisAgent.ID) continue
       yield* restoreQueue(parent.id).pipe(Effect.orElseSucceed(() => undefined))
     }
+
+    // Generalist primitives call the SAME independently scheduled worker engine.
+    // The bridge is registered at controller initialization and validates parent
+    // ownership on every call. It never lets a planner bypass worker permissions.
+    registerGeneralistWorkerBridge(async (parentID, operation, args) => {
+      try {
+        const parent = SessionSchema.ID.make(parentID)
+        const owner = await Effect.runPromise(sessions.get(parent))
+        if (owner.agent !== JarvisAgent.ID) throw new Error("Worker bridge requires Jarvis owner session")
+        const idValue = typeof args.sessionID === "string" ? args.sessionID : ""
+        if (operation === "worker.delegate") {
+          const instruction = typeof args.instruction === "string" ? args.instruction.trim() : ""
+          if (!instruction) throw new Error("Worker instruction is required")
+          const pool = (await Effect.runPromise(agents.list()))
+            .filter(agent => agent.id !== JarvisAgent.ID && !agent.hidden)
+            .map(agent => ({id:String(agent.id),description:agent.description}))
+          const chosen = typeof args.agent === "string" && args.agent
+            ? args.agent : pickAgent(instruction,pool)?.id ?? "build"
+          const selected = await Effect.runPromise(agents.select(Agent.ID.make(chosen)))
+          if (!selected.info || selected.id === JarvisAgent.ID) throw new Error("Worker unavailable: "+chosen)
+          await Effect.runPromise(gate.withPermits(1)(restoreQueue(parent)))
+          const created = await Effect.runPromise(sessions.create({
+            parentID:parent,title:typeof args.title === "string"?args.title:instruction.slice(0,70),
+            agent:selected.id,permissions:[],
+            metadata:{jarvis:{role:"worker",queue:{status:"queued",instruction}}},
+          }))
+          const scheduled = scheduler.enqueue({id:created.id,input:{sessionID:created.id,instruction:[
+            instruction,"","[Jarvis worker contract]","Use actual tools. Verify every action.",
+            "Do not bypass consent or claim unverified success.","Do not wait for Jarvis brain.",
+          ].join("\n")}})
+          const status=scheduled.status==="queued"?"queued":"running"
+          return {ok:true,data:{sessionID:created.id,status,agent:String(selected.id)},evidence:["Worker "+status+": "+created.id]}
+        }
+        if (!idValue) throw new Error("Worker sessionID required")
+        const target = SessionSchema.ID.make(idValue)
+        const info = await Effect.runPromise(sessions.get(target))
+        if (!isWorkerOf(info,parent)) throw new Error("Not a worker owned by this Jarvis session")
+        if(operation==="worker.status"){
+          const live=await Effect.runPromise(sessions.active)
+          const status=live.has(target)?"running":info.outcome??"idle or queued"
+          return {ok:true,data:{sessionID:target,status},evidence:["Worker status "+status]}
+        }
+        if(operation==="worker.send"){
+          const instruction=typeof args.text==="string"?args.text.trim():""
+          if(!instruction)throw new Error("Follow-up text required")
+          await Effect.runPromise(sessions.prompt({sessionID:target,text:instruction}))
+          return {ok:true,data:{sessionID:target,admitted:true},evidence:["Worker follow-up admitted"]}
+        }
+        if(operation==="worker.interrupt"){
+          const interrupted=await Effect.runPromise(sessions.interrupt(target))
+          return {ok:true,data:{sessionID:target,interrupted},evidence:["Worker interruption "+interrupted]}
+        }
+        throw new Error("Unsupported worker operation")
+      } catch(error){return {ok:false,error:String(error),evidence:[String(error)]}}
+    })
 
     const authorize = Effect.fn("JarvisControl.authorize")(function* (sessionID: SessionSchema.ID, agent: Agent.ID) {
       if (agent !== JarvisAgent.ID)
