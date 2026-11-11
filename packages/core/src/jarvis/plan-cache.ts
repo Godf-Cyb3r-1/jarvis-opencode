@@ -99,3 +99,15 @@ export async function learnPlan(kv:KVLike,fp:Fingerprint,plan:Plan,capabilities:
  return stored
 }
 export async function invalidatePlan(kv:KVLike,fp:Fingerprint){await kv.remove(prefix+fp.hash)}
+
+export async function nearestPlans(kv:KVLike,fp:Fingerprint,capabilities:string,limit=3,now=Date.now()):Promise<Plan[]> {
+ const all=await kv.scan({prefix,limit:500})
+ return all.entries.map(item=>item.value as CachedPlan)
+  .filter(value=>value&&typeof value.signature==="string"&&value.machineCapabilitiesAtSave===capabilities&&
+    now-value.createdAt<30*86400_000&&value.successCount>value.failCount)
+  .map(value=>({value,score:similarity(fp.tokens,value.signature.split(" "))}))
+  .filter(candidate=>candidate.score>0.15)
+  .sort((a,b)=>b.score-a.score)
+  .slice(0,Math.min(limit,3))
+  .map(candidate=>candidate.value.template)
+}
