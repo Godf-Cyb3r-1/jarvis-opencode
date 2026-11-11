@@ -40,8 +40,12 @@ import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { itemsOf } from "../jarvis/memory.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis/cloud-memory.js"
 import { planExecution } from "../jarvis/fast-path.js"
-import { actionToken, capabilityStatement, shouldRunMediaPreflight } from "../jarvis/capability-preflight.js"
-import { executeQuickAction } from "../jarvis/quick-action.js"
+import { actionToken } from "../jarvis/capability-preflight.js"
+import { launchBrowserURL } from "../jarvis/quick-action.js"
+import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
+import { scopedTools } from "../jarvis/tool-scope.js"
+import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
+import { Session } from "../session.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -350,36 +354,58 @@ export const layer = Layer.effect(
         ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
         : ""
       const registeredTools = [...hooked.keys()]
+      const matchedSkills = jarvisRequest && kind === "primary" ? matchSkills(lastUserText) : []
+      const skillResults: SkillResult[] = []
       if (jarvisRequest && kind === "primary") {
-        system.push(SystemPart.make(capabilityStatement(registeredTools)))
-        // A model that responds without calling tools cannot complete a simple
-        // direct action. Execute strictly allowlisted explicit media requests
-        // before generating the answer, with a durable per-turn idempotency key.
-        if (Option.isSome(kvOption) && shouldRunMediaPreflight({
-          kind, agent: String(input.agent), text: lastUserText, toolNames: registeredTools,
-        })) {
-          const key = actionToken(
-            String(session.id),
-            input.messages.filter((message) => message.role === "user").length,
-            lastUserText,
-          )
+        // Admission before LLM: deterministic match, real OS action, idempotent
+        // re-entry. Never let the weak model choose competing browser tools.
+        if (Option.isSome(kvOption) && matchedSkills.length) {
           const kv = kvOption.value
-          let result = yield* kv.get(key)
-          if (typeof result !== "string") {
-            // A retry or crash must not launch the same browser action again.
-            yield* kv.set(key, "The action was attempted but no result was confirmed.")
-            result = yield* Effect.promise(async () => {
-              try {
-                const opened = await executeQuickAction(lastUserText)
-                return opened.detail
-              } catch (error) {
-                return "Desktop quick action did not succeed: " + String(error)
-              }
-            })
-            yield* kv.set(key, result)
+          const sessionService = yield* Effect.serviceOption(Session.Service)
+          const turn = input.messages.filter((message) => message.role === "user").length
+          for (const [index, match] of matchedSkills.entries()) {
+            const key = actionToken(String(session.id), turn, lastUserText) + ":skill:" + index
+            const saved = yield* kv.get(key)
+            let result: SkillResult
+            if (typeof saved === "object" && saved !== null && "id" in saved && "success" in saved) {
+              result = saved as SkillResult
+            } else {
+              // Reserve the turn first so retries cannot open duplicate tabs.
+              result = { id: match.id, success: false, detail: "Action was previously attempted but not confirmed.", elapsedMs: 0 }
+              yield* kv.set(key, result as KV.Value)
+              result = yield* Effect.promise(() => executeSkill(match, {
+                launch: (url) => launchBrowserURL(url),
+                workers: async () => {
+                  if (Option.isNone(sessionService)) return "Worker status service not available; status not verified."
+                  const service = sessionService.value
+                  const children = yield* Effect.runPromise(service.list({ parentID: session.id, limit: 100 }))
+                  return children.data.length
+                    ? children.data.map((child) => child.title + ": " + (child.outcome ? "finished" : "in progress or idle")).join("; ")
+                    : "No worker sessions found."
+                },
+              }))
+              yield* kv.set(key, result as KV.Value)
+            }
+            skillResults.push(result)
           }
+        }
+        const allSucceeded = matchedSkills.length > 0 && skillResults.length === matchedSkills.length &&
+          skillResults.every((result) => result.success)
+        if (allSucceeded) {
+          const filtered = scopedTools(hooked, matchedSkills)
+          hooked.clear()
+          for (const [name, definition] of filtered) hooked.set(name, definition)
+        }
+        system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
+        if (matchedSkills.length) {
           system.push(SystemPart.make(
-            "[Actual media preflight result, never reinterpret or fabricate: " + result + "]",
+            "[Deterministic skill admission]\n" +
+            matchedSkills.map((match, i) =>
+              match.id + ": " + (skillResults[i]?.success ? "EXECUTED" : "NOT CONFIRMED") +
+              ", detail: " + (skillResults[i]?.detail ?? "No execution available") +
+              ". Narration hint: " + match.narrationHint,
+            ).join("\n") +
+            "\nWhen EXECUTED, respond without calling tools. Never confuse launching a page with completing an external action.\n[/Deterministic skill admission]",
           ))
         }
       }
