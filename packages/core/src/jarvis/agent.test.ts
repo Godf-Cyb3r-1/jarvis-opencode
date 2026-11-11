@@ -19,7 +19,7 @@ test("Jarvis is registered as a primary non-developer assistant with the version
   for (const tool of ["bash", "write", "edit", "apply_patch", "execute"]) {
     expect(Permission.evaluate(tool, "*", info.permissions).effect).toBe("allow")
   }
-  expect(Permission.evaluate("task", "*", info.permissions).effect).toBe("deny")
+  expect(Permission.evaluate("task", "*", info.permissions).effect).toBe("allow")
 })
 
 test("Jarvis persona remains text-only and limits optional OmniVoice expressions", () => {
