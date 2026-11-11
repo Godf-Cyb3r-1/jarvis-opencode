@@ -45,6 +45,7 @@ import { planExecution } from "../jarvis/fast-path.js"
 import { probeCapabilities, firstPersonCapabilities } from "../jarvis/capability-probe.js"
 import { runGeneralistTurn } from "../jarvis/generalist.js"
 import { isGeneralistAction } from "../jarvis/admission.js"
+import { admitApproval } from "../jarvis/approval.js"
 import { expressionContext } from "../jarvis/expression-governor.js"
 import { callGeneralistWorker } from "../jarvis/worker-bridge.js"
 import type { KVLike } from "../jarvis/plan-cache.js"
@@ -384,8 +385,9 @@ export const layer = Layer.effect(
             scan: (filter) => Effect.runPromise(kv.scan(filter)),
           }
           const environment = system.slice(1).filter(part => part.text.includes("environment") || part.text.includes("date"))
-          const outcome = yield* Effect.promise(() => runGeneralistTurn({
-            task:prompt,sessionID:String(session.id),turn:userTurn,
+          const approval = yield* Effect.promise(() => admitApproval(store,String(session.id),prompt))
+          const outcome = approval.allowed ? yield* Effect.promise(() => runGeneralistTurn({
+            task:approval.task,sessionID:String(session.id),turn:userTurn,
             capabilities:machine,kv:store,
             recent:input.messages.filter(message=>message.role==="user").slice(-3)
               .flatMap(message=>message.role==="user"
@@ -407,9 +409,10 @@ export const layer = Layer.effect(
               onWorker:(operation,args)=>callGeneralistWorker(String(session.id),operation,args),
               onSchedule:async()=>({ok:false,error:"Schedule dispatcher is not connected",evidence:["No running scheduler"]}),
               // Never infer user approval from an LLM-produced JSON plan.
-              confirm:async()=>false,
+              confirm:async()=>approval.confirmed,
             },
-          }))
+          })) : {status:"blocked" as const,cache:"miss" as const,plannerCalls:0,
+            detail:approval.detail??"User confirmation required"}
           verifiedGeneralist = outcome.status === "completed"
           handledGeneralist = verifiedGeneralist || outcome.status === "delegated"
           yield* kv.set("jarvis:expression:context:v4:"+String(session.id),{
