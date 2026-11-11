@@ -429,6 +429,18 @@ export const layer = Layer.effect(
                   if (!workerAdapter) throw new Error("Worker bridge not initialized; use session_list to discover workers")
                   return workerAdapter.list()
                 },
+                greeting: async () => {
+                  const greetingKey = "jarvis:greeting:v4:" + String(session.id)
+                  const raw = await Effect.runPromise(kv.get(greetingKey))
+                  const previous = raw && typeof raw === "object" && !Array.isArray(raw)
+                    ? raw as { last?: string; at?: number } : {}
+                  const now = Date.now()
+                  const first = turn === 1 || !previous.at || now - previous.at > 6 * 3600_000
+                  const options = first ? ["Vanakkam."] : ["Hey.", "Hello.", "Hi."]
+                  const chosen = options.find((item) => item !== previous.last) ?? options[0]!
+                  await Effect.runPromise(kv.set(greetingKey, { last: chosen, at: now }))
+                  return chosen
+                },
               }))
               yield* kv.set(key, result as KV.Value)
             }
