@@ -46,7 +46,7 @@ import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-rou
 import { scopedTools } from "../jarvis/tool-scope.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
 import { classifyTurn } from "../jarvis/chat-classifier.js"
-import { Session } from "../session.js"
+import { getWorkerAdapter } from "../jarvis/worker-bridge.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -354,27 +354,19 @@ export const layer = Layer.effect(
       const lastUserText = lastUser && lastUser.role === "user"
         ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
         : ""
-      // Independent chat admission: route single-worker follow-ups/cancellation
-      // deterministically, without waiting for the worker to finish or asking the
-      // free brain to rediscover the same control tools.
-      const workerService = jarvisRequest && kind === "primary"
-        ? yield* Effect.serviceOption(Session.Service) : Option.none<Session.Interface>()
-      const activeWorkers = yield* Effect.gen(function* () {
-        if (Option.isNone(workerService)) return [] as SessionSchema.Info[]
-        const listed = yield* workerService.value.list({ parentID: session.id, limit: 100 })
-        const active = yield* workerService.value.active
-        return listed.data.filter((child) =>
-          child.parentID === session.id &&
-          (child.metadata?.jarvis as { role?: string } | undefined)?.role === "worker" &&
-          active.has(child.id),
-        )
-      }).pipe(Effect.orElseSucceed(() => [] as SessionSchema.Info[]))
+      // A worker adapter is registered by the actual Jarvis controller after
+      // authorized session_create/session_list. No Session.Service import here.
+      const workerAdapter = jarvisRequest && kind === "primary"
+        ? getWorkerAdapter(String(session.id)) : undefined
+      const activeWorkers = workerAdapter
+        ? yield* Effect.promise(() => workerAdapter.active()).pipe(Effect.orElseSucceed(() => []))
+        : []
       const chatKind = jarvisRequest && kind === "primary"
         ? classifyTurn(lastUserText, activeWorkers.length > 0) : undefined
       let routedWorkerAction: string | undefined
       let narrationOnly = false
       if (chatKind && (chatKind === "CANCEL" || chatKind === "FOLLOWUP") &&
-          activeWorkers.length === 1 && Option.isSome(workerService) && Option.isSome(kvOption)) {
+          activeWorkers.length === 1 && workerAdapter && Option.isSome(kvOption)) {
         const target = activeWorkers[0]!
         const turn = input.messages.filter((message) => message.role === "user").length
         const key = actionToken(String(session.id), turn, lastUserText) + ":worker:" + chatKind
@@ -382,22 +374,26 @@ export const layer = Layer.effect(
         if (typeof saved === "string") {
           routedWorkerAction = saved
         } else {
-          // Reserve before dispatch. A provider retry cannot duplicate an effect.
+          // Reserve before an external action to avoid duplicate execution on retry.
           yield* kvOption.value.set(key, "Action attempted; confirmation unavailable")
-          const command = chatKind === "CANCEL"
-            ? workerService.value.interrupt(target.id).pipe(
-                Effect.map((ok) => ok ? "Worker interruption requested: " + target.id : "Worker was not running: " + target.id),
-              )
-            : workerService.value.prompt({ sessionID: target.id, text: lastUserText }).pipe(
-                Effect.as("Follow-up sent to worker: " + target.id),
-              )
-          routedWorkerAction = yield* command.pipe(
-            Effect.catch((error) => Effect.succeed("Worker action failed: " + String(error))),
-          )
+          routedWorkerAction = yield* Effect.promise(async () => {
+            try {
+              if (chatKind === "CANCEL") {
+                const ok = await workerAdapter.interrupt(target.id)
+                return ok ? "Worker interruption requested: " + target.id : "Worker was already idle: " + target.id
+              }
+              await workerAdapter.send(target.id, lastUserText)
+              return "Follow-up sent to worker: " + target.id
+            } catch (error) {
+              return "Worker control failed: " + String(error)
+            }
+          })
           yield* kvOption.value.set(key, routedWorkerAction)
         }
-        for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
-        narrationOnly = true
+        if (!routedWorkerAction.startsWith("Worker control failed")) {
+          for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
+          narrationOnly = true
+        }
       }
       if (chatKind && jarvisRequest && kind === "primary") {
         system.push(SystemPart.make(
@@ -416,7 +412,6 @@ export const layer = Layer.effect(
         // re-entry. Never let the weak model choose competing browser tools.
         if (Option.isSome(kvOption) && matchedSkills.length) {
           const kv = kvOption.value
-          const sessionService = yield* Effect.serviceOption(Session.Service)
           const turn = input.messages.filter((message) => message.role === "user").length
           for (const [index, match] of matchedSkills.entries()) {
             const key = actionToken(String(session.id), turn, lastUserText) + ":skill:" + index
@@ -431,12 +426,8 @@ export const layer = Layer.effect(
               result = yield* Effect.promise(() => executeSkill(match, {
                 launch: (url) => launchBrowserURL(url),
                 workers: async () => {
-                  if (Option.isNone(sessionService)) throw new Error("Worker status unavailable from this runtime; delegate through session_list")
-                  const service = sessionService.value
-                  const children = await Effect.runPromise(service.list({ parentID: session.id, limit: 100 }))
-                  return children.data.length
-                    ? children.data.map((child) => child.title + ": " + (child.outcome ? "finished" : "in progress or idle")).join("; ")
-                    : "No worker sessions found."
+                  if (!workerAdapter) throw new Error("Worker bridge not initialized; use session_list to discover workers")
+                  return workerAdapter.list()
                 },
               }))
               yield* kv.set(key, result as KV.Value)
