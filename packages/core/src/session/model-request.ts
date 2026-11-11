@@ -396,6 +396,13 @@ export const layer = Layer.effect(
             plan:async (plannerText) => {
               const planningRequest = ai.request({
                 model:model.model,
+                headers:{
+                  "x-opencode-session-id":session.id,
+                  "x-session-affinity":SessionAffinity.get(session),
+                  "X-Session-Id":SessionAffinity.get(session),
+                  "x-opencode-project":session.projectID,
+                  "User-Agent":App.useragent(app),
+                },
                 system:[SystemPart.make("Return only a JSON object for the approved generalist primitive planner. No narration."),...environment],
                 messages:[Message.user(plannerText)],
                 tools:[],
