@@ -1,5 +1,6 @@
 import { matchSkills, executeSkill } from "./skill-router.js"
 import { scopedTools } from "./tool-scope.js"
+import { governExpression, initialGovernorState } from "./expression-governor.js"
 export type Sample = { prompt: string; firstResultMs: number; confidence: number; toolCount: number; refusals: number; opener: string; matched: boolean }
 export const benchmarkPrompts = [
  "play a Tamil song","play a sad song","play tamil paattu","பாடல் போடு தமிழ்","play music",
@@ -14,17 +15,25 @@ export const benchmarkPrompts = [
 /** Test-only deterministic admission benchmark. These are not provider token latency measurements. */
 export async function benchmarkAdmission() : Promise<Sample[]> {
  const rows:Sample[]=[]
+ let governor=initialGovernorState()
  for(const prompt of benchmarkPrompts){
   const started=performance.now()
   const matched=matchSkills(prompt)
   let firstResultMs=0
+  let firstText=""
   if(matched.length){
-   await executeSkill(matched[0]!,{ launch: async ()=>"Requested browser launch", workers: async ()=>"No workers" })
+   const executed=await executeSkill(matched[0]!,{ launch: async ()=>"Browser launch requested", workers: async ()=>"No workers" })
+   firstText=executed.detail
    firstResultMs=performance.now()-started
   }else firstResultMs=performance.now()-started
   const tools=scopedTools(new Map([["read",1],["browser_tabs_open",1],["session_create",1]]),matched)
+  const speech = matched[0]?.id === "greet" ? "Hey. Hello." : firstText
+  const governed = governExpression(speech, matched[0]?.id === "greet" ? "greeting" : "neutral",
+    rows.length + 1, 1000 + rows.length * 1000, governor)
+  governor = governed.state
   rows.push({prompt,firstResultMs,confidence:matched[0]?.confidence??0,toolCount:tools.size,
-    refusals:0,opener:"",matched:matched.length>0})
+    refusals:/\b(?:i can't|i cannot|i'm unable)\b/i.test(governed.displayText) ? 1 : 0,
+    opener:governed.state.lastOpener ?? "",matched:matched.length>0})
  }
  return rows
 }
