@@ -43,7 +43,6 @@ import { planExecution } from "../jarvis/fast-path.js"
 import { actionToken } from "../jarvis/capability-preflight.js"
 import { launchBrowserURL } from "../jarvis/quick-action.js"
 import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
-import { scopedTools } from "../jarvis/tool-scope.js"
 import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
 import { scopeShellFirst } from "../jarvis/command-first.js"
 import { classifyTurn } from "../jarvis/chat-classifier.js"
@@ -366,7 +365,6 @@ export const layer = Layer.effect(
       const chatKind = jarvisRequest && kind === "primary"
         ? classifyTurn(lastUserText, activeWorkers.length > 0) : undefined
       let routedWorkerAction: string | undefined
-      let narrationOnly = false
       if (chatKind && (chatKind === "CANCEL" || chatKind === "FOLLOWUP") &&
           activeWorkers.length === 1 && workerAdapter && Option.isSome(kvOption)) {
         const target = activeWorkers[0]!
@@ -393,8 +391,6 @@ export const layer = Layer.effect(
           yield* kvOption.value.set(key, routedWorkerAction)
         }
         if (!routedWorkerAction.startsWith("Worker control failed")) {
-          for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
-          narrationOnly = true
         }
       }
       if (chatKind && jarvisRequest && kind === "primary") {
@@ -476,12 +472,9 @@ export const layer = Layer.effect(
         }
         const allSucceeded = matchedSkills.length > 0 && skillResults.length === matchedSkills.length &&
           skillResults.every((result) => result.success)
-        if (allSucceeded) {
-          narrationOnly = true
-          const filtered = scopedTools(hooked, matchedSkills)
-          hooked.clear()
-          for (const [name, definition] of filtered) hooked.set(name, definition)
-        }
+        // Preserve all available tools: deterministic execution is a fast path,
+        // not an artificial constraint on follow-up verification or workers.
+        // The skill result is already in context, so do not re-execute it.
         system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
         if (matchedSkills.length) {
           system.push(SystemPart.make(
@@ -695,7 +688,7 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: narrationOnly ? "none" : input.toolChoice,
+        toolChoice: input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
       })
