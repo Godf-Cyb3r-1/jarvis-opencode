@@ -59,3 +59,15 @@ export function governExpression(
     },
   }
 }
+
+/** A deterministic skill may already have supplied the current turn's opener.
+ * Never generate a second audible copy of it in the brain continuation.
+ */
+export function stripDuplicateOpener(output:string, skillNarration:string):string {
+  const opener=skillNarration.trim().match(/^(?:vanakkam|ayyo|hey|hi|hello|seri|right|okay|on it)[.!?,]?/i)?.[0]
+  if(!opener)return output
+  const escaped=opener.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")
+  const match=new RegExp("^(?:"+escaped+"|"+opener.replace(/[.!?,]/g,"")+")[.!?,\\s]*","i")
+  const stripped=output.replace(match,"").trim()
+  return stripped || ""
+}
