@@ -248,9 +248,14 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
               const raw = yield* kvOption.value.get(key)
               const saved = raw && typeof raw === "object" ? raw as GovernorState & { turn?: number } : undefined
               const now = Date.now()
-              const turn = (saved?.turn ?? 0) + 1
-              const context = /^(?:hi|hello|hey|vanakkam)/i.test(content) ? "greeting"
-                : /^(?:error|failed|sorry|that's frustrating)/i.test(content) ? "negative" : "neutral"
+              const contextValue = yield* kvOption.value.get("jarvis:expression:context:v4:" + String(input.sessionID))
+              const observed = contextValue && typeof contextValue === "object" && !Array.isArray(contextValue)
+                ? contextValue as { context?: string; turn?: number } : undefined
+              const turn = observed?.turn ?? (saved?.turn ?? 0) + 1
+              const allowed = ["greeting", "action", "agreement", "thought", "negative", "neutral"]
+              const context = observed?.context && allowed.includes(observed.context)
+                ? observed.context as "greeting" | "action" | "agreement" | "thought" | "negative" | "neutral"
+                : "neutral"
               const governed = governExpression(content, context, turn, now, saved ?? initialGovernorState())
               content = governed.displayText
               yield* kvOption.value.set(key, { ...governed.state, turn } as KV.Value)
