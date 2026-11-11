@@ -7,6 +7,8 @@ export type MachineCapabilities={
  hasInternet:boolean|null; roots:string[];checkedAt:number;signature:string
 }
 let cached:MachineCapabilities|undefined
+let workerAgents:string[]=[]
+export function registerWorkerAgents(agents:readonly string[]){workerAgents=[...agents];cached=undefined}
 function command(bin:string,args:string[],timeout=700):string|null {
  try {
   const r=spawnSync(bin,args,{encoding:"utf8",timeout,windowsHide:true,stdio:["ignore","pipe","ignore"]})
@@ -15,7 +17,7 @@ function command(bin:string,args:string[],timeout=700):string|null {
 }
 export function probeCapabilities(input:{tools?:readonly string[];workers?:readonly string[];roots?:string[];refresh?:boolean}={}):MachineCapabilities {
  const now=Date.now()
- const tools=[...input.tools??[]],workers=[...input.workers??[]]
+ const tools=[...input.tools??[]],workers=[...input.workers??workerAgents]
  if(!input.refresh&&cached&&now-cached.checkedAt<60_000 &&
    cached.mcpTools.join("|")===tools.filter(x=>/mcp|browser_tabs_|ui_click/i.test(x)).join("|")&&
    cached.workers.join("|")===workers.join("|"))return cached
