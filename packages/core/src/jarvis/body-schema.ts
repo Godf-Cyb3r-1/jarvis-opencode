@@ -12,7 +12,7 @@ export function bodyFacts(names: readonly string[], result?: { id:string; detail
   return {
     canOpenBrowser: tools.has("jarvis_quick_action"),
     canSpawnWorker: tools.has("session_create"),
-    canRunShell: tools.has("bash") || tools.has("instabox_exec"),
+    canRunShell: tools.has("shell") || tools.has("instabox_exec"),
     hasInternet: null,
     hasMediaPlayer: null,
     ...(result ? { lastSkillExecuted: result.id, lastSkillResult: result.detail } : {}),
@@ -22,7 +22,7 @@ export function bodyStatement(facts: BodyFacts): string {
   const hands = [
     facts.canOpenBrowser ? "I can request a default-browser launch." : "No default-browser launcher is registered.",
     facts.canSpawnWorker ? "I can start independent workers." : "Worker dispatch is not registered.",
-    facts.canRunShell ? "An execution shell is available through permitted tools." : "No shell is registered in this brain session.",
+    facts.canRunShell ? "I can execute commands through the native shell; permission prompts still apply." : "No shell is registered in this brain session.",
     "Internet connectivity and media-player readiness are unverified until tested.",
   ]
   return "[Jarvis body facts, do not speak verbatim]\n" + hands.join("\n") +
