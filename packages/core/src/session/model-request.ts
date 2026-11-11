@@ -482,6 +482,12 @@ export const layer = Layer.effect(
           }
         }
         const state=admissionReport(matchedSkills,skillResults)
+        if(Option.isSome(kvOption)&&matchedSkills.length){
+          const turn=input.messages.filter(message=>message.role==="user").length
+          yield* kvOption.value.set("jarvis:admission:result:v4:"+String(session.id),
+            {turn,state:state.state,matched:state.matched,executed:state.executed,verified:state.verified,
+             results:skillResults} as KV.Value)
+        }
         if(state.narrationOnly)
           for(const name of [...hooked.keys()])if(name!=="read")hooked.delete(name)
         system.push(SystemPart.make(narrationInstructions(state,skillResults)))
