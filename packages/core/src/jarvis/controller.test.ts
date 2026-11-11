@@ -4,11 +4,11 @@ import { canUseBrainTool, JarvisScheduler } from "./controller"
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 describe("Jarvis controller protection", () => {
-  test("brain can only call orchestration tools, never code/shell/file tools", () => {
-    for (const name of ["session_create", "session_peek", "agent_list", "memory_find"]) {
+  test("brain can directly call permission-guarded shell and orchestration tools", () => {
+    for (const name of ["session_create", "session_peek", "agent_list", "memory_find", "shell"]) {
       expect(canUseBrainTool(name)).toBe(true)
     }
-    for (const name of ["bash", "shell", "read", "write", "edit", "apply_patch", "task", "unknown"]) {
+    for (const name of ["bash", "read", "write", "edit", "apply_patch", "task", "unknown"]) {
       expect(canUseBrainTool(name)).toBe(false)
     }
   })
