@@ -123,11 +123,14 @@ export const Plugin = {
             "Host execution blocked by Jarvis policy. Use instabox_status, then instabox_exec in /data/workspace. " +
             "If Instabox is not configured, ask the user to install its CLI and sign in first. No local fallback.",
           ))
-        if (route === "approval-required")
+        if (route === "approval-required" && context.agent !== "jarvis")
           return yield* Effect.fail(new Error(
             "This host command is not on the read-only local allowlist. " +
             "Use Instabox for tools/builds, or perform local non-shell tasks through dedicated UI/file tools.",
           ))
+        // Jarvis has a per-command OpenCode 'ask' shell policy. Do not block
+        // before Permission.assert can show the user the requested command.
+        // Tool installs/builds still follow the mandatory Instabox policy.
       }
       const target = yield* access.resolve({ path: invocation.cwd, kind: "directory" })
       invocation.cwd = target.absolute
