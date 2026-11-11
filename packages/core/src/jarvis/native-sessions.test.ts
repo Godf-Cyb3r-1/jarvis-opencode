@@ -8,7 +8,7 @@ test("brain permits direct native tools via OpenCode approval policies", () => {
     expect(Permission.evaluate(tool, "*", BRAIN_PERMISSIONS).effect).toBe("allow")
   for (const tool of ["bash", "edit", "write", "apply_patch", "execute"])
     expect(Permission.evaluate(tool, "*", BRAIN_PERMISSIONS).effect).toBe("allow")
-  expect(Permission.evaluate("task", "*", BRAIN_PERMISSIONS).effect).toBe("deny")
+  expect(Permission.evaluate("task", "*", BRAIN_PERMISSIONS).effect).toBe("allow")
   expect(canUseBrainTool("session_create")).toBe(true)
 })
 
