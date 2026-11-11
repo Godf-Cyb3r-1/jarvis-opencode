@@ -23,5 +23,5 @@ test("Jarvis persona remains text-only and limits optional OmniVoice expressions
   expect(persona).toContain("[laughter]")
   expect(persona).toContain("[sigh]")
   expect(persona).toContain("Most replies should contain zero tags")
-  expect(persona).toContain("preserve URLs, commands, filenames")
+  expect(persona).toContain("Preserve URLs, commands, filenames")
 })
