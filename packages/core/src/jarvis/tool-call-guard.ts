@@ -28,3 +28,12 @@ export function inspectToolCall(
   return {allowed,score,retry:!allowed&&failures<1,fallback:!allowed&&failures>=1,
     ...(allowed?{}:{reason:"Pass the user's original message verbatim; do not paraphrase."})}
 }
+
+/** After exactly one corrective model retry, use original input, never
+ * another LLM paraphrase. Existing typed non-text arguments stay intact.
+ */
+export function rawTextFallback(name:string,input:unknown,original:string):unknown {
+  if(!ACTION_TEXT_TOOLS.has(name)||!input||typeof input!=="object")return input
+  const field=name==="jarvis_quick_action"?"request":name==="session_create"?"instruction":"task"
+  return {...input,[field]:original}
+}
