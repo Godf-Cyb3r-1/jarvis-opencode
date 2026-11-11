@@ -419,7 +419,11 @@ export const layer = Layer.effect(
         .slice(-9, -1).flatMap((message) => message.role === "user"
           ? [message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")]
           : [])
-      const preference = itemsOf(session.metadata).find((item) =>
+      const projectMemory = jarvisRequest && Option.isSome(kvOption)
+        ? yield* kvOption.value.get("jarvis:memory:project:" + session.projectID) : undefined
+      const preferences = itemsOf(projectMemory as Record<string,unknown> | undefined)
+        .concat(itemsOf(session.metadata))
+      const preference = preferences.find((item) =>
         /preferred_language\s*[:=]/i.test(item.text))?.text.match(/preferred_language\s*[:=]\s*([\p{L}]+)/iu)?.[1]
       const matchedSkills = jarvisRequest && kind === "primary"
         ? matchSkills(lastUserText,{recentUserTurns,preferences:preference?{preferred_language:preference}:{}})
