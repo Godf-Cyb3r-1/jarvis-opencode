@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
-import { access, readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { access, readFile, writeFile, readdir } from "node:fs/promises"
+import { resolve } from "node:path"
 
 export type PrimitiveName =
   | "shell.run" | "shell.powershell" | "os.openUrl" | "os.openFile" | "os.openApp"
