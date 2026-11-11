@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test"
 import { matchSkill } from "./skill-router"
 import { scopedTools } from "./tool-scope"
-test("matched skill physically removes competing MCP browser and worker tools", () => {
+test("matched skill preserves available execution and worker tools", () => {
   const tools = new Map([["read",1],["browser_tabs_open",2],["browser_tabs_list",3],["ui_click",4],["session_create",5]])
   const scoped = scopedTools(tools,[matchSkill("play a Tamil song")!])
-  expect([...scoped.keys()]).toEqual(["read"])
+  expect([...scoped.keys()]).toEqual([...tools.keys()])
   expect([...scopedTools(tools,[]).keys()]).toEqual([...tools.keys()])
 })
