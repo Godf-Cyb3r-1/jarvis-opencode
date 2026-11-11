@@ -43,6 +43,7 @@ import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis
 import { planExecution } from "../jarvis/fast-path.js"
 import { probeCapabilities, firstPersonCapabilities } from "../jarvis/capability-probe.js"
 import { runGeneralistTurn } from "../jarvis/generalist.js"
+import { isGeneralistAction } from "../jarvis/admission.js"
 import { callGeneralistWorker } from "../jarvis/worker-bridge.js"
 import type { KVLike } from "../jarvis/plan-cache.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
@@ -362,12 +363,7 @@ export const layer = Layer.effect(
         const llmOption = yield* Effect.serviceOption(LLMClient.Service)
         const userTurn = input.messages.filter((message) => message.role === "user").length
         const prompt = lastUserText.trim()
-        // A grammatical action admission, not a task-type table. Normal
-        // questions and statements remain in the companion conversation.
-        const conversational = /^(?:what|why|how|who|where|when|is|are|do you think|tell me about|hi|hello|hey|thanks|thank you)\b/i.test(prompt)
-        const actionRequest = prompt.length > 1 && !conversational &&
-          (/^(?:please|can you|could you|would you|jarvis[, ]+)/i.test(prompt) ||
-            /^(?:[a-z]+\s+){0,3}(?:the|a|an|my|this|that|https?:\/\/|[a-z]:\\)/i.test(prompt))
+        const actionRequest = isGeneralistAction(prompt)
         if (actionRequest && Option.isSome(llmOption)) {
           const kv = kvOption.value
           const store: KVLike = {
