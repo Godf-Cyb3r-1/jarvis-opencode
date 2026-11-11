@@ -5,7 +5,7 @@ export type Context = "greeting" | "action" | "agreement" | "thought" | "negativ
 export function expressionContext(text:string, skill?: { id:string; success:boolean }):Context {
   if (skill?.success && skill.id === "greet") return "greeting"
   if (skill?.success && skill.id !== "status.workers") return "action"
-  if (/\b(?:frustrat|worst|failed|error|terrible|sad|angry|upset|annoyed|broken)\b|கஷ்டம்|சோகம்/i.test(text)) return "negative"
+  if (/\b(?:frustrat\w*|worst|failed|error|terrible|sad|angry|upset|annoyed|broken)\b|கஷ்டம்|சோகம்/i.test(text)) return "negative"
   if (/^(?:hi|hello|hey|vanakkam|வணக்கம்)[!. ]*$/i.test(text)) return "greeting"
   if (/\b(?:agree|correct|right|yes|exactly|true)\b|ஆமா/i.test(text)) return "agreement"
   if (/\b(?:why|how|explain|investigate|think|check)\b|ஏன்/i.test(text)) return "thought"
