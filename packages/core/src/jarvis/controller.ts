@@ -4,11 +4,11 @@
 export const JARVIS_CONTROL_TOOLS = [
   "session_create", "session_send", "session_status", "session_peek",
   "session_interrupt", "session_switch_agent", "session_switch_model",
-  "session_compact", "command_run", "shell", "agent_list", "agent_create",
+  "session_compact", "command_run", "shell", "bash", "read", "write", "edit", "apply_patch", "execute", "agent_list", "agent_create",
   "plugin_create", "model_list", "model_pick", "memory_find", "memory_read",
 ] as const
 
-/** Fail closed for mutation; native shell calls are supported with permissions and user approvals. */
+/** Advertise native execution tools; actual permission decisions remain with OpenCode. */
 const permitted = new Set<string>(JARVIS_CONTROL_TOOLS)
 export function canUseBrainTool(tool: string): boolean {
   return permitted.has(tool)
@@ -32,8 +32,8 @@ export class JarvisScheduler<T> {
   private readonly listeners = new Set<(event: TaskEvent<T>) => void>()
 
   constructor(readonly maxSessions: number, private readonly execute: WorkerExecutor<T>) {
-    if (!Number.isSafeInteger(maxSessions) || maxSessions < 1 || maxSessions > 4) {
-      throw new Error("jarvis.maxSessions must be an integer between 1 and 4")
+    if (!Number.isSafeInteger(maxSessions) || maxSessions < 1 || maxSessions > 16) {
+      throw new Error("jarvis.maxSessions must be an integer between 1 and 16")
     }
   }
 
