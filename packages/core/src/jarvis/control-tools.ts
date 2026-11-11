@@ -18,6 +18,7 @@ import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-m
 import { checkInstabox, runInstabox } from "./instabox-runtime.js"
 import { planExecution, preferredReasoningVariant } from "./fast-path.js"
 import { executeQuickAction } from "./quick-action.js"
+import { registerWorkerAdapter } from "./worker-bridge.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
 export const MaxActiveWorkers = 4
@@ -127,6 +128,30 @@ export const Plugin = {
       const parent = yield* sessions.get(sessionID)
       if (parent.agent !== JarvisAgent.ID)
         return yield* new ToolFailure({ message: "Controller caller must be a Jarvis brain session." })
+      // Register real, permission-owned worker operations without making the
+      // request composer import Session.Service (which would create a cycle).
+      registerWorkerAdapter(String(sessionID), {
+        active: async () => {
+          const [children, live] = await Promise.all([
+            Effect.runPromise(sessions.list({ parentID: sessionID, limit: 100 })),
+            Effect.runPromise(sessions.active),
+          ])
+          return children.data.filter((child) => isWorkerOf(child, sessionID) && live.has(child.id))
+            .map((child) => ({ id: String(child.id), title: child.title ?? "Untitled" }))
+        },
+        list: async () => {
+          const children = await Effect.runPromise(sessions.list({ parentID: sessionID, limit: 100 }))
+          const live = await Effect.runPromise(sessions.active)
+          const owned = children.data.filter((child) => isWorkerOf(child, sessionID))
+          return owned.length
+            ? owned.map((child) => child.title + ": " + (live.has(child.id) ? "running" : child.outcome ? "finished" : "idle or queued")).join("; ")
+            : "No owned workers found."
+        },
+        interrupt: (id) => Effect.runPromise(sessions.interrupt(SessionSchema.ID.make(id))),
+        send: async (id, instruction) => {
+          await Effect.runPromise(sessions.prompt({ sessionID: SessionSchema.ID.make(id), text: instruction }))
+        },
+      })
       return parent
     })
     const worker = Effect.fn("JarvisControl.worker")(function* (
