@@ -10,15 +10,7 @@ export async function executeQuickAction(input: string): Promise<{ kind: string;
   // Headless Instabox servers do not have a human-visible default browser.
   if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
     throw new Error("No graphical desktop is available. Use a connected local browser/media worker instead.")
-  const program = process.platform === "win32" ? "explorer.exe" : "xdg-open"
-  if (process.platform !== "win32" && process.platform !== "linux")
-    throw new Error("Direct browser launching is supported on Windows/Linux only")
-  await new Promise<void>((resolve, reject) => {
-    let settled = false
-    const child = spawn(program, [action.url], { shell: false, detached: true, stdio: "ignore", windowsHide: true })
-    child.once("error", (err) => { if (!settled) { settled = true; reject(err) } })
-    child.once("spawn", () => { if (!settled) { settled = true; child.unref(); resolve() } })
-  })
+  await launchBrowserURL(action.url)
   return {
     kind: action.kind,
     url: action.url,
@@ -26,4 +18,31 @@ export async function executeQuickAction(input: string): Promise<{ kind: string;
       ? "Sent YouTube search to the default browser. Browser readiness and playback have NOT been confirmed; use a browser/media worker if automatic play is required."
       : "Sent the page to the default browser; successful navigation has not been confirmed.",
   }
+}
+
+/** Open a validated URL with the OS default browser, without MCP tab creation.
+ * cmd.exe's start is a shell built-in: escape metacharacters and always quote.
+ */
+export async function launchBrowserURL(target: string): Promise<string> {
+  const url = new URL(target)
+  if (url.protocol !== "https:" || url.username || url.password || !url.hostname.includes("."))
+    throw new Error("Only safe HTTPS URLs may be launched")
+  if (process.platform !== "win32" && process.platform !== "linux")
+    throw new Error("Desktop browser launch supports Windows and Linux only")
+  if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
+    throw new Error("No graphical desktop session is available")
+  const executable = process.platform === "win32" ? "cmd.exe" : "xdg-open"
+  // Encode once for cmd. URL quotes, percent expansion and metacharacters must not
+  // escape the quoted argument. Never insert user text into a raw command.
+  const safe = url.toString()
+  const args = process.platform === "win32"
+    ? ["/d", "/s", "/c", 'start "" "' + safe.replace(/%/g, "%%").replace(/[&|<>^!]/g, (m) => "^" + m) + '"']
+    : [safe]
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(executable, args, { shell: false, detached: true, stdio: "ignore", windowsHide: true })
+    let settled = false
+    child.once("error", (error) => { if (!settled) { settled = true; reject(error) } })
+    child.once("spawn", () => { if (!settled) { settled = true; child.unref(); resolve() } })
+  })
+  return "Desktop browser launch requested for " + url.origin + ". Navigation is not independently verified."
 }
