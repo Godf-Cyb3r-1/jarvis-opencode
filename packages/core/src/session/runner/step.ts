@@ -29,7 +29,7 @@ import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { SessionRunnerRetry } from "./retry.js"
 import { shouldRetryRefusal, refusalReminder } from "../../jarvis/refusal-interceptor.js"
 import { bodyFacts } from "../../jarvis/body-schema.js"
-import { inspectToolCall } from "../../jarvis/tool-call-guard.js"
+import { inspectToolCall,rawTextFallback } from "../../jarvis/tool-call-guard.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
@@ -129,10 +129,17 @@ export const make = Effect.gen(function* () {
         const decision=inspectToolCall(call.name,call.input,sourceText,previous)
         if(!decision.allowed){
           guardFailures.set(call.name,previous+1)
-          return Effect.fail(new Tool.Error({message:decision.reason +
-            (decision.fallback
-              ? " Second invalid attempt: original-text deterministic admission is authoritative. Do not retry this paraphrase."
-              : " Retry once with the original user message verbatim.")}))
+          if(decision.fallback){
+            // Last resort: the exact user input, not the model's paraphrase.
+            const corrected={...call,input:rawTextFallback(call.name,call.input,sourceText)}
+            return input.prepared.executeTool({
+              sessionID:input.sessionID,agent:input.agent,
+              messageID:input.assistantMessageID,call:corrected,
+              progress:(update)=>publisher.progress(call.id,update),
+            })
+          }
+          return Effect.fail(new Tool.Error({message:decision.reason+
+            " Retry once with the original user message verbatim."}))
         }
       }
       if (input.prepared.request.toolChoice?.type === "none")
