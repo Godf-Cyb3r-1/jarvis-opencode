@@ -17,7 +17,7 @@ import { contentFilterError } from "../to-session-error.js"
 import type { Tool } from "../../tool.js"
 import { stringify } from "../../tool/runtime.js"
 import { normalizeJarvisText } from "../../jarvis/expression-policy.js"
-import { governExpression, initialGovernorState, type GovernorState } from "../../jarvis/expression-governor.js"
+import { governExpression, initialGovernorState, stripDuplicateOpener, type GovernorState } from "../../jarvis/expression-governor.js"
 import { KV } from "../../kv.js"
 
 type Input = {
@@ -258,6 +258,12 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
                 : "neutral"
               const governed = governExpression(content, context, turn, now, saved ?? initialGovernorState())
               content = governed.displayText
+              const emitted=yield* kvOption.value.get("jarvis:emitted-opener:v4:"+String(input.sessionID))
+              if(emitted && typeof emitted==="object" && !Array.isArray(emitted)) {
+                const value=emitted as {turn?:number;text?:string}
+                if(value.turn===turn && typeof value.text==="string")
+                  content=stripDuplicateOpener(content,value.text)
+              }
               yield* kvOption.value.set(key, { ...governed.state, turn } as KV.Value)
             }
             if (clean.accepted) jarvisExpressionUsed = true
