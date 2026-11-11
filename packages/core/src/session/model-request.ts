@@ -48,7 +48,7 @@ import { isGeneralistAction } from "../jarvis/admission.js"
 import { admitApproval } from "../jarvis/approval.js"
 import { expressionContext } from "../jarvis/expression-governor.js"
 import { callGeneralistWorker } from "../jarvis/worker-bridge.js"
-import type { KVLike } from "../jarvis/plan-cache.js"
+import { fingerprint, type CachedPlan, type KVLike } from "../jarvis/plan-cache.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -367,6 +367,7 @@ export const layer = Layer.effect(
             roots:[session.location.directory]})
         : undefined
       if (machine) system.push(SystemPart.make(firstPersonCapabilities(machine)))
+      let dynamicExecutionPlan: ReturnType<typeof planExecution> | undefined
       let verifiedGeneralist = false
       let handledGeneralist = false
       let generalistAttempted = false
@@ -384,6 +385,19 @@ export const layer = Layer.effect(
             remove: (key) => Effect.runPromise(kv.remove(key)),
             scan: (filter) => Effect.runPromise(kv.scan(filter)),
           }
+          const fp = fingerprint(prompt)
+          const previousTierValue = yield* kv.get("jarvis:v5:tier:"+String(session.id))
+          const previousTier = ["low","medium","high","max"].includes(String(previousTierValue))
+            ? previousTierValue as "low"|"medium"|"high"|"max" : undefined
+          const previousCache = yield* kv.get("jarvis:v5:plan:"+fp.hash) as CachedPlan|undefined
+          const cacheUsable = !!previousCache && previousCache.machineCapabilitiesAtSave===machine.signature &&
+            Date.now()-previousCache.createdAt<30*86400_000
+          dynamicExecutionPlan = planExecution(prompt,{previous:previousTier,
+            latencies:cacheUsable?previousCache?.latenciesMs??[]:[]})
+          if(cacheUsable && dynamicExecutionPlan.risk==="normal"){
+            dynamicExecutionPlan={...dynamicExecutionPlan,complexity:"low",parallelWorkers:1}
+          }
+          yield* kv.set("jarvis:v5:tier:"+String(session.id),dynamicExecutionPlan.complexity)
           const environment = system.slice(1).filter(part => part.text.includes("environment") || part.text.includes("date"))
           const approval = yield* Effect.promise(() => admitApproval(store,String(session.id),prompt))
           const outcome = approval.allowed ? yield* Effect.promise(() => runGeneralistTurn({
@@ -392,7 +406,7 @@ export const layer = Layer.effect(
             recent:input.messages.filter(message=>message.role==="user").slice(-3)
               .flatMap(message=>message.role==="user"
                 ?message.content.flatMap(part=>part.type==="text"?[part.text]:[]):[]),
-            highComplexity:prompt.length>350,
+            highComplexity:dynamicExecutionPlan.complexity==="high" || dynamicExecutionPlan.complexity==="max",
             plan:async (plannerText) => {
               const planningRequest = ai.request({
                 model:model.model,
@@ -464,7 +478,7 @@ export const layer = Layer.effect(
         const requestText = latest && latest.role === "user"
           ? latest.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
           : ""
-        const plan = planExecution(requestText)
+        const plan = dynamicExecutionPlan ?? planExecution(requestText)
         system.push(SystemPart.make(
           "[Jarvis runtime execution guidance: " + plan.complexity +
           " reasoning depth, " + plan.budgetSeconds +
