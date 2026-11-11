@@ -19,7 +19,6 @@ const root="jarvis:v5:turn:"
 const stateKey=(v:GeneralistInput)=>root+v.sessionID+":"+v.turn
 const record=(v:unknown):v is GeneralistResult=>
  !!v&&typeof v==="object"&&["completed","failed","blocked","skipped"].includes((v as GeneralistResult).status)
-const highRisk=/\b(?:delete|wipe|deploy|secret|production|payment|send|purchase|kill|overwrite|erase)\b/i
 /** Calls the weak planner on first-use only. Cached plans execute without any
  * planner request. The primitive executor, not the model, enforces permissions.
  */
