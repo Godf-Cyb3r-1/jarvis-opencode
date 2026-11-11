@@ -18,6 +18,7 @@ import { Skill } from "../skill.js"
 import { SessionBlob } from "./blob.js"
 import { AttachmentError, SkillNotFoundError } from "./error.js"
 import { SessionStored } from "./stored.js"
+import { matchSkills } from "../jarvis/skill-router.js"
 
 // Image types the resizer can decode; others such as HEIC and AVIF go to the provider unchanged.
 const RESIZABLE_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"])
@@ -52,6 +53,15 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
     delivery: request.input.delivery ?? "steer",
   })
   const input = event.prompt
+  // G1 admission is deterministic and happens before a model request is composed.
+  // The request composer executes matching effects with KV idempotency, then
+  // removes competing tools from the actual provider schema.
+  const jarvisSkills = request.session.agent === "jarvis" ? matchSkills(input.text) : []
+  if (jarvisSkills.length) yield* Effect.logInfo("jarvis.v4.skill_admitted", {
+    sessionID: String(request.session.id),
+    messageID: String(request.messageID),
+    skills: jarvisSkills.map((skill) => ({ id: skill.id, confidence: skill.confidence })),
+  })
   const files = input.files
     ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 })
     : undefined
@@ -84,7 +94,11 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
       agents: input.agents,
       files,
       skills: selected?.length ? selected : undefined,
-      metadata: event.metadata,
+      metadata: jarvisSkills.length
+        ? { ...(event.metadata ?? {}), jarvisV4Admission: jarvisSkills.map((skill) => ({
+            id: skill.id, confidence: skill.confidence,
+          })) }
+        : event.metadata,
     }),
     delivery: event.delivery,
   } satisfies SessionInbox.Item

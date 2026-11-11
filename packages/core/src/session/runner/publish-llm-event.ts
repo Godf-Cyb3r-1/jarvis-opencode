@@ -17,6 +17,8 @@ import { contentFilterError } from "../to-session-error.js"
 import type { Tool } from "../../tool.js"
 import { stringify } from "../../tool/runtime.js"
 import { normalizeJarvisText } from "../../jarvis/expression-policy.js"
+import { governExpression, initialGovernorState, type GovernorState } from "../../jarvis/expression-governor.js"
+import { KV } from "../../kv.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -27,6 +29,7 @@ type Input = {
   readonly pendingSnapshot?: Effect.Effect<Snapshot.ID | undefined>
   readonly started: number
   readonly assistantMessageID: SessionMessage.ID
+  readonly retryJarvisRefusal?: (text: string) => Effect.Effect<string | undefined>
 }
 
 const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : { value })
@@ -239,6 +242,24 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           if (name === "text" && input.agent === "jarvis") {
             const clean = normalizeJarvisText(content, { alreadyUsed: jarvisExpressionUsed })
             content = clean.text
+            const kvOption = yield* Effect.serviceOption(KV.Service)
+            if (kvOption._tag === "Some") {
+              const key = "jarvis:expression:v4:" + String(input.sessionID)
+              const raw = yield* kvOption.value.get(key)
+              const saved = raw && typeof raw === "object" ? raw as GovernorState & { turn?: number } : undefined
+              const now = Date.now()
+              const contextValue = yield* kvOption.value.get("jarvis:expression:context:v4:" + String(input.sessionID))
+              const observed = contextValue && typeof contextValue === "object" && !Array.isArray(contextValue)
+                ? contextValue as { context?: string; turn?: number } : undefined
+              const turn = observed?.turn ?? (saved?.turn ?? 0) + 1
+              const allowed = ["greeting", "action", "agreement", "thought", "negative", "neutral"]
+              const context = observed?.context && allowed.includes(observed.context)
+                ? observed.context as "greeting" | "action" | "agreement" | "thought" | "negative" | "neutral"
+                : "neutral"
+              const governed = governExpression(content, context, turn, now, saved ?? initialGovernorState())
+              content = governed.displayText
+              yield* kvOption.value.set(key, { ...governed.state, turn } as KV.Value)
+            }
             if (clean.accepted) jarvisExpressionUsed = true
             if (clean.removed.length) {
               yield* Effect.logWarning("Jarvis response expression markers rejected", {
@@ -247,6 +268,10 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
                 removed: clean.removed,
               })
             }
+          }
+          if (name === "text" && input.agent === "jarvis" && input.retryJarvisRefusal) {
+            const retried = yield* input.retryJarvisRefusal(content)
+            if (retried?.trim()) content = normalizeJarvisText(retried).text
           }
           yield* bus.publish(events.Ended, {
             sessionID: input.sessionID,

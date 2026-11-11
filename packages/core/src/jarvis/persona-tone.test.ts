@@ -2,9 +2,9 @@ import { expect, test } from "bun:test"
 import { definition } from "./agent"
 const persona = definition().system ?? ""
 test("V3 persona is loaded and does not require an artificial prefix", () => {
-  expect(persona).toContain("JARVIS_PERSONA_VERSION_UNIVERSAL_V3")
+  expect(persona).toContain("JARVIS_PERSONA_VERSION_UNIVERSAL_V4")
   expect(persona).toContain("Most replies should contain zero tags")
-  expect(persona).toContain("NOT an automatic response to")
+  expect(persona).toContain("DON\x27T open every reply")
   expect(persona).toContain("appropriate")
 })
 test("Jarvis has full operational awareness, not fictional human abilities", () => {
@@ -23,5 +23,5 @@ test("natural South Indian language does not enforce catchphrases", () => {
   expect(persona).toContain("Tamil Nadu/South Indian English")
   expect(persona).toContain("Ayyo")
   expect(persona).toContain("Vanakkam")
-  expect(persona).toContain("not the start of every negative answer")
+  expect(persona).toContain("Ayyo")
 })

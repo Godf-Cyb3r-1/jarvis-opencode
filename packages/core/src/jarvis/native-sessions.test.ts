@@ -3,11 +3,12 @@ import { Permission } from "../permission"
 import { BRAIN_PERMISSIONS, isBrain, canonicalBrainSessionID } from "./native-sessions"
 import { canUseBrainTool } from "./controller"
 
-test("brain session carries non-mutating inspection tools without giving the brain worker tools", () => {
+test("brain permits direct native tools via OpenCode approval policies", () => {
   for (const tool of ["read", "glob", "grep", "question"])
     expect(Permission.evaluate(tool, "*", BRAIN_PERMISSIONS).effect).toBe("allow")
-  for (const tool of ["bash", "edit", "write", "task", "apply_patch", "execute"])
-    expect(Permission.evaluate(tool, "*", BRAIN_PERMISSIONS).effect).toBe("deny")
+  for (const tool of ["bash", "edit", "write", "apply_patch", "execute"])
+    expect(Permission.evaluate(tool, "*", BRAIN_PERMISSIONS).effect).toBe("ask")
+  expect(Permission.evaluate("task", "*", BRAIN_PERMISSIONS).effect).toBe("deny")
   expect(canUseBrainTool("session_create")).toBe(true)
 })
 

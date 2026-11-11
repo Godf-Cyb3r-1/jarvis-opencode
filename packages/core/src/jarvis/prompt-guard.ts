@@ -3,7 +3,7 @@ import type { Agent } from "@opencode/schema/agent"
 import { Instructions } from "../instructions/index.js"
 import * as Jarvis from "./agent.js"
 
-export const PERSONA_VERSION = "JARVIS_PERSONA_VERSION_UNIVERSAL_V3"
+export const PERSONA_VERSION = "JARVIS_PERSONA_VERSION_UNIVERSAL_V4"
 
 /** Built-in context the free gateway expects on an OpenCode request. Keep it
  * alongside the persona while still discarding project/plugin instructions.

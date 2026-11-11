@@ -40,8 +40,14 @@ import { learnFromUserTexts, memoryContext } from "../jarvis/auto-memory.js"
 import { itemsOf } from "../jarvis/memory.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "../jarvis/cloud-memory.js"
 import { planExecution } from "../jarvis/fast-path.js"
-import { actionToken, capabilityStatement, shouldRunMediaPreflight } from "../jarvis/capability-preflight.js"
-import { executeQuickAction } from "../jarvis/quick-action.js"
+import { actionToken } from "../jarvis/capability-preflight.js"
+import { launchBrowserURL } from "../jarvis/quick-action.js"
+import { matchSkills, executeSkill, type SkillResult } from "../jarvis/skill-router.js"
+import { bodyFacts, bodyStatement } from "../jarvis/body-schema.js"
+import { scopeShellFirst } from "../jarvis/command-first.js"
+import { classifyTurn } from "../jarvis/chat-classifier.js"
+import { expressionContext } from "../jarvis/expression-governor.js"
+import { getWorkerAdapter } from "../jarvis/worker-bridge.js"
 import { canonicalSystem, PERSONA_VERSION } from "../jarvis/prompt-guard.js"
 import { Instructions } from "../instructions/index.js"
 import { Permission } from "../permission.js"
@@ -332,13 +338,6 @@ export const layer = Layer.effect(
         const inspection = tools.definitions.find((definition) => definition.name === "read")
         if (inspection) hooked.set("read", inspection)
       }
-      // Opt-in differential probe: isolate whether extra controller tools
-      // are rejected by a gateway, without permanently disabling delegation.
-      if (jarvisRequest && process.env.JARVIS_GATEWAY_TOOL_PROFILE === "inspection") {
-        for (const name of hooked.keys()) {
-          if (!["read", "glob", "grep", "question"].includes(name)) hooked.delete(name)
-        }
-      }
       // Use the pre-hook system parts as the source of OpenCode's built-in
       // date/environment context: hooks may replace the whole system array,
       // but the free gateway still needs the environment block.
@@ -349,39 +348,143 @@ export const layer = Layer.effect(
       const lastUserText = lastUser && lastUser.role === "user"
         ? lastUser.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
         : ""
-      const registeredTools = [...hooked.keys()]
-      if (jarvisRequest && kind === "primary") {
-        system.push(SystemPart.make(capabilityStatement(registeredTools)))
-        // A model that responds without calling tools cannot complete a simple
-        // direct action. Execute strictly allowlisted explicit media requests
-        // before generating the answer, with a durable per-turn idempotency key.
-        if (Option.isSome(kvOption) && shouldRunMediaPreflight({
-          kind, agent: String(input.agent), text: lastUserText, toolNames: registeredTools,
-        })) {
-          const key = actionToken(
-            String(session.id),
-            input.messages.filter((message) => message.role === "user").length,
-            lastUserText,
-          )
-          const kv = kvOption.value
-          let result = yield* kv.get(key)
-          if (typeof result !== "string") {
-            // A retry or crash must not launch the same browser action again.
-            yield* kv.set(key, "The action was attempted but no result was confirmed.")
-            result = yield* Effect.promise(async () => {
-              try {
-                const opened = await executeQuickAction(lastUserText)
-                return opened.detail
-              } catch (error) {
-                return "Desktop quick action did not succeed: " + String(error)
+      // A worker adapter is registered by the actual Jarvis controller after
+      // authorized session_create/session_list. No Session.Service import here.
+      const workerAdapter = jarvisRequest && kind === "primary"
+        ? getWorkerAdapter(String(session.id)) : undefined
+      const activeWorkers = workerAdapter
+        ? yield* Effect.promise(() => workerAdapter.active()).pipe(Effect.orElseSucceed(() => []))
+        : []
+      const chatKind = jarvisRequest && kind === "primary"
+        ? classifyTurn(lastUserText, activeWorkers.length > 0) : undefined
+      let routedWorkerAction: string | undefined
+      if (chatKind && (chatKind === "CANCEL" || chatKind === "FOLLOWUP") &&
+          activeWorkers.length === 1 && workerAdapter && Option.isSome(kvOption)) {
+        const target = activeWorkers[0]!
+        const turn = input.messages.filter((message) => message.role === "user").length
+        const key = actionToken(String(session.id), turn, lastUserText) + ":worker:" + chatKind
+        const saved = yield* kvOption.value.get(key)
+        if (typeof saved === "string") {
+          routedWorkerAction = saved
+        } else {
+          // Reserve before an external action to avoid duplicate execution on retry.
+          yield* kvOption.value.set(key, "Action attempted; confirmation unavailable")
+          routedWorkerAction = yield* Effect.promise(async () => {
+            try {
+              if (chatKind === "CANCEL") {
+                const ok = await workerAdapter.interrupt(target.id)
+                return ok ? "Worker interruption requested: " + target.id : "Worker was already idle: " + target.id
               }
-            })
-            yield* kv.set(key, result)
+              await workerAdapter.send(target.id, lastUserText)
+              return "Follow-up sent to worker: " + target.id
+            } catch (error) {
+              return "Worker control failed: " + String(error)
+            }
+          })
+          yield* kvOption.value.set(key, routedWorkerAction)
+        }
+        if (!routedWorkerAction.startsWith("Worker control failed")) {
+        }
+      }
+      if (chatKind && jarvisRequest && kind === "primary") {
+        system.push(SystemPart.make(
+          "[Jarvis live conversation routing] " + chatKind +
+          ". Active owned workers: " + activeWorkers.length +
+          (routedWorkerAction ? ". Actual dispatch outcome: " + routedWorkerAction +
+            ". Narrate it; do not dispatch again." : "") +
+          ". Never await worker completion in the conversation lane. [/Jarvis live conversation routing]",
+        ))
+      }
+      // For explicit terminal commands, expose the real shell instead of a
+      // competing swarm of worker/browser tools. Native shell permissions and
+      // host-vs-Instabox routing remain authoritative on execution.
+      const shellFirst = jarvisRequest && kind === "primary"
+        ? scopeShellFirst(hooked, lastUserText)
+        : { scoped: hooked, command: undefined as string | undefined }
+      if (shellFirst.command) {
+        hooked.clear()
+        for (const [name, definition] of shellFirst.scoped) hooked.set(name, definition)
+        system.push(SystemPart.make(
+          "[Explicit command request] Use the registered shell tool FIRST for: " +
+          shellFirst.command +
+          ". Respect the native permission prompt and host/Instabox restrictions. " +
+          "Check command exit status before claiming completion; do not delegate first. " +
+          "[/Explicit command request]",
+        ))
+      }
+      const registeredTools = [...hooked.keys()]
+      const matchedSkills = jarvisRequest && kind === "primary" ? matchSkills(lastUserText) : []
+      const skillResults: SkillResult[] = []
+      if (jarvisRequest && kind === "primary") {
+        // Admission before LLM: deterministic match, real OS action, idempotent
+        // re-entry. Never let the weak model choose competing browser tools.
+        if (Option.isSome(kvOption) && matchedSkills.length) {
+          const kv = kvOption.value
+          const turn = input.messages.filter((message) => message.role === "user").length
+          for (const [index, match] of matchedSkills.entries()) {
+            const key = actionToken(String(session.id), turn, lastUserText) + ":skill:" + index
+            const saved = yield* kv.get(key)
+            let result: SkillResult
+            if (typeof saved === "object" && saved !== null && "id" in saved && "success" in saved) {
+              result = saved as SkillResult
+            } else {
+              // Reserve the turn first so retries cannot open duplicate tabs.
+              result = { id: match.id, success: false, detail: "Action was previously attempted but not confirmed.", elapsedMs: 0 }
+              yield* kv.set(key, result as KV.Value)
+              result = yield* Effect.promise(() => executeSkill(match, {
+                launch: (url) => launchBrowserURL(url),
+                workers: async () => {
+                  if (!workerAdapter) throw new Error("Worker bridge not initialized; use session_list to discover workers")
+                  return workerAdapter.list()
+                },
+                greeting: async () => {
+                  const greetingKey = "jarvis:greeting:v4:" + String(session.id)
+                  const raw = await Effect.runPromise(kv.get(greetingKey))
+                  const previous = raw && typeof raw === "object" && !Array.isArray(raw)
+                    ? raw as { last?: string; at?: number } : {}
+                  const now = Date.now()
+                  const first = turn === 1 || !previous.at || now - previous.at > 6 * 3600_000
+                  const options = first ? ["Vanakkam."] : ["Hey.", "Hello.", "Hi."]
+                  const chosen = options.find((item) => item !== previous.last) ?? options[0]!
+                  await Effect.runPromise(kv.set(greetingKey, { last: chosen, at: now }))
+                  return chosen
+                },
+              }))
+              yield* kv.set(key, result as KV.Value)
+            }
+            skillResults.push(result)
+            if (result.success && result.elapsedMs > 0) {
+              const latencyKey = "jarvis:skill:latency:v4:" + match.id
+              const previous = yield* kv.get(latencyKey)
+              const historical = Array.isArray(previous)
+                ? previous.filter((n): n is number => typeof n === "number" && Number.isFinite(n)).slice(-19)
+                : []
+              yield* kv.set(latencyKey, [...historical, result.elapsedMs])
+            }
           }
+        }
+        // Preserve all available tools: deterministic execution is a fast path,
+        // not an artificial constraint on follow-up verification or workers.
+        // The skill result is already in context, so do not re-execute it.
+        system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
+        if (matchedSkills.length) {
           system.push(SystemPart.make(
-            "[Actual media preflight result, never reinterpret or fabricate: " + result + "]",
+            "[Deterministic skill admission]\n" +
+            matchedSkills.map((match, i) =>
+              match.id + ": " + (skillResults[i]?.success ? "EXECUTED" : "NOT CONFIRMED") +
+              ", detail: " + (skillResults[i]?.detail ?? "No execution available") +
+              ". Narration hint: " + match.narrationHint,
+            ).join("\n") +
+            "\nWhen EXECUTED, respond without calling tools. Never confuse launching a page with completing an external action.\n[/Deterministic skill admission]",
           ))
         }
+      }
+      if (jarvisRequest && kind === "primary" && Option.isSome(kvOption)) {
+        const turn = input.messages.filter((message) => message.role === "user").length
+        yield* kvOption.value.set("jarvis:expression:context:v4:" + String(session.id), {
+          context: expressionContext(lastUserText, skillResults.at(-1)),
+          turn,
+        })
       }
       // Jarvis evaluates work complexity per user turn, without altering
       // provider-selected model capabilities. The worker tool may pick an
@@ -391,11 +494,26 @@ export const layer = Layer.effect(
         const requestText = latest && latest.role === "user"
           ? latest.content.flatMap((part) => part.type === "text" ? [part.text] : []).join(" ")
           : ""
-        const plan = planExecution(requestText)
+        const kv = Option.isSome(kvOption) ? kvOption.value : undefined
+        const stateKey = "jarvis:complexity:v4:" + String(session.id)
+        const previousState = kv ? yield* kv.get(stateKey) : undefined
+        const previousTier = typeof previousState === "string" &&
+          ["low", "medium", "high", "max"].includes(previousState)
+          ? previousState as "low" | "medium" | "high" | "max" : undefined
+        const latencies = kv && matchedSkills[0]
+          ? yield* kv.get("jarvis:skill:latency:v4:" + matchedSkills[0].id) : undefined
+        const plan = planExecution(requestText, {
+          previous: previousTier,
+          latencies: Array.isArray(latencies)
+            ? latencies.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+            : [],
+        })
+        if (kv) yield* kv.set(stateKey, plan.complexity)
         system.push(SystemPart.make(
           "[Jarvis runtime execution guidance: " + plan.complexity +
           " reasoning depth, " + plan.budgetSeconds +
           " second SOFT worker progress checkpoint; " + plan.reason +
+          (plan.requiresConfirmation ? ". High-risk action: request actual approval before external changes." : "") +
           ". Use fast direct actions when safe, verify outcomes; never invent model thinking settings or cancel work at the checkpoint.]",
         ))
       }

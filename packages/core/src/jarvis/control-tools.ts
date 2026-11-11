@@ -18,9 +18,13 @@ import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-m
 import { checkInstabox, runInstabox } from "./instabox-runtime.js"
 import { planExecution, preferredReasoningVariant } from "./fast-path.js"
 import { executeQuickAction } from "./quick-action.js"
+import { registerWorkerAdapter } from "./worker-bridge.js"
 
 /** Native model-callable delegation. Never run the implementation in the Jarvis brain session. */
-export const MaxActiveWorkers = 4
+const configuredWorkerCount = Number(process.env.JARVIS_MAX_WORKERS ?? 8)
+export const MaxActiveWorkers = Number.isSafeInteger(configuredWorkerCount)
+  ? Math.max(1, Math.min(configuredWorkerCount, 16))
+  : 8
 export const isWorkerOf = (session: SessionSchema.Info, parentID: SessionSchema.ID) =>
   session.parentID === parentID &&
   (session.metadata?.jarvis as { role?: string } | undefined)?.role === "worker"
@@ -65,9 +69,9 @@ export const Plugin = {
         if (!synced) yield* Effect.logWarning("jarvis.cloud_memory.write_failed")
       }
     })
-    // Prevent parallel tool calls from slipping past the four-slot capacity check.
+    // Serialize queue registration only; do not serialize worker execution.
     const gate = yield* Semaphore.make(1)
-    // Queue tasks per OpenCode plugin instance; do not start a fifth prompt until a slot releases.
+    // Configurable worker parallelism with a bounded queue to avoid exhausting the host.
     const scheduler = new JarvisScheduler<{ sessionID: SessionSchema.ID; instruction: string }>(
       MaxActiveWorkers,
       async (task, signal) => {
@@ -127,6 +131,30 @@ export const Plugin = {
       const parent = yield* sessions.get(sessionID)
       if (parent.agent !== JarvisAgent.ID)
         return yield* new ToolFailure({ message: "Controller caller must be a Jarvis brain session." })
+      // Register real, permission-owned worker operations without making the
+      // request composer import Session.Service (which would create a cycle).
+      registerWorkerAdapter(String(sessionID), {
+        active: async () => {
+          const [children, live] = await Promise.all([
+            Effect.runPromise(sessions.list({ parentID: sessionID, limit: 100 })),
+            Effect.runPromise(sessions.active),
+          ])
+          return children.data.filter((child) => isWorkerOf(child, sessionID) && live.has(child.id))
+            .map((child) => ({ id: String(child.id), title: child.title ?? "Untitled" }))
+        },
+        list: async () => {
+          const children = await Effect.runPromise(sessions.list({ parentID: sessionID, limit: 100 }))
+          const live = await Effect.runPromise(sessions.active)
+          const owned = children.data.filter((child) => isWorkerOf(child, sessionID))
+          return owned.length
+            ? owned.map((child) => child.title + ": " + (live.has(child.id) ? "running" : child.outcome ? "finished" : "idle or queued")).join("; ")
+            : "No owned workers found."
+        },
+        interrupt: (id) => Effect.runPromise(sessions.interrupt(SessionSchema.ID.make(id))),
+        send: async (id, instruction) => {
+          await Effect.runPromise(sessions.prompt({ sessionID: SessionSchema.ID.make(id), text: instruction }))
+        },
+      })
       return parent
     })
     const worker = Effect.fn("JarvisControl.worker")(function* (
@@ -345,7 +373,7 @@ export const Plugin = {
       editor.add({
         name: "session_create",
         options: { codemode: false },
-        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Jarvis chooses a suitable installed agent if none is specified; an explicit agent wins. Returns an actual worker session ID and the actual running/queued state. At most four run simultaneously; a fifth session is queued automatically and does not count as started.",
+        description: "Delegate implementation or research to an independent OpenCode worker. Jarvis must not perform the work itself. Jarvis chooses a suitable installed agent if none is specified; an explicit agent wins. Returns an actual worker session ID and the actual running/queued state. Parallel worker slots are configurable by JARVIS_MAX_WORKERS (default 8, maximum 16); excess sessions queue without blocking the brain.",
         input: Schema.Struct({
           title: Schema.String,
           instruction: Schema.String,
@@ -417,7 +445,9 @@ export const Plugin = {
                   input.instruction,
                   "",
                   "[Jarvis worker contract]",
+                  "windows-mcp browser_tabs_* and ui_click tools are for actual UI interaction only; clicking/filling/DOM reading. For a simple URL launch/search use jarvis_quick_action, never browser_tabs_open if the quick action supports it.",
                   "Complexity: " + plan.complexity + "; soft checkpoint: " + plan.budgetSeconds + " seconds.",
+                  "Use the available shell, editing tools, OS commands and installed integrations directly as required. Do not treat absent brain-only tools as worker restrictions.",
                   "Start with the smallest concrete action. Verify results, avoid unnecessary exploration.",
                   "If work extends past the checkpoint, keep working and report verified progress.",
                   "Never claim an action occurred until it is observed. Confirm before irreversible or third-party actions.",

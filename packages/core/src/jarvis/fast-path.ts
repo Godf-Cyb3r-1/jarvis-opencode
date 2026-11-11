@@ -48,21 +48,67 @@ export type ExecutionPlan = {
   parallelWorkers: number
   reason: string
   risk: "normal" | "sensitive"
+  requiresConfirmation: boolean
+  score: number
 }
-
-export function planExecution(task: string): ExecutionPlan {
-  const text = task.toLowerCase()
-  const sensitive = /\b(delete|wipe|production|deploy|payment|send (?:message|email)|purchase|security|penetration|exploit|credential|secret)\b/.test(text)
-  const extensive = /\b(architecture|refactor|migrate|entire|full[- ]?stack|complex|production[- ]ready|audit|thorough|comprehensive|from scratch|all modules)\b/.test(text)
-  const serious = /\b(build|implement|debug|fix|test|analyze|analyse|compare|investigate|research|integrate|automate)\b/.test(text)
-  const simple = /\b(open|play|pause|resume|find|show|check|status|list|hello|hi|what is|tell me)\b/.test(text)
-  const complexity: Complexity = extensive ? "max" : sensitive || serious ? "high" : simple ? "low" : "medium"
+const IMPERATIVE = /\b(?:build|fix|implement|refactor|migrate|test|run|open|play|deploy|delete|write|search|install|send|create|audit|investigate)\b/gi
+const RISK = /\b(?:delete|wipe|deploy|secret|production|payment|purchase|credential)\b/gi
+const ENTITY = /(?:https?:\/\/\S+|(?:[A-Za-z]:\\|\/[\w.-]+\/)\S*|\b\w+\.\w+\b)/g
+const CONNECTOR = /\b(?:mcp|connector|plugin|api|github|gmail|instabox|browser|database|db)\b/gi
+export type ScoreState = { previous?: Complexity; retries?: number; latencies?: number[] }
+const order: Complexity[] = ["low", "medium", "high", "max"]
+export function complexityScore(task: string, state: ScoreState = {}): number {
+  const norm = task.trim()
+  const count = (re: RegExp) => [...norm.matchAll(re)].length
+  // Fixed, transparent weights. Each input feature is bounded to [0,1].
+  const features = {
+    length: Math.min(norm.length / 400, 1),
+    imperative: Math.min(count(IMPERATIVE) / 4, 1),
+    risk: Math.min(count(RISK) / 2, 1),
+    entities: Math.min(count(ENTITY) / 4, 1),
+    connectors: Math.min(count(CONNECTOR) / 4, 1),
+    retry: Math.min((state.retries ?? 0) / 3, 1),
+  }
+  return 0.10 * features.length + 0.25 * features.imperative +
+    0.25 * features.risk + 0.12 * features.entities +
+    0.16 * features.connectors + 0.12 * features.retry
+}
+export function complexityTier(score: number, previous?: Complexity): Complexity {
+  const desired: Complexity = score < 0.21 ? "low" : score < 0.43 ? "medium" : score < 0.68 ? "high" : "max"
+  if (!previous) return desired
+  const old = order.indexOf(previous)
+  const next = order.indexOf(desired)
+  if (old === next) return previous
+  const cuts = [0.21, 0.43, 0.68]
+  // Hysteresis: cross the far edge by 0.04 to change tier, one step at a time.
+  if (next > old && score < (cuts[old] ?? 1) + 0.04) return previous
+  if (next < old && score > (cuts[old - 1] ?? 0) - 0.04) return previous
+  return order[old + Math.sign(next - old)] ?? desired
+}
+export function latencyBudget(floorSeconds: number, latencies: number[] = []): number {
+  const ordered = latencies.filter((n) => Number.isFinite(n) && n >= 0).slice(-20).sort((a,b) => a - b)
+  if (!ordered.length) return floorSeconds
+  const p90 = ordered[Math.ceil(ordered.length * 0.9) - 1] ?? 0
+  return Math.max(floorSeconds, Math.ceil(1.5 * p90 / 1000))
+}
+export function planExecution(task: string, state: ScoreState = {}): ExecutionPlan {
+  const score = complexityScore(task, state)
+  const highRisk = RISK.test(task) || /\b(?:send (?:email|message)|purchase)\b/i.test(task)
+  // RegExp global test mutates lastIndex; reset for deterministic repeat calls.
+  RISK.lastIndex = 0
+  const multiStep = /\b(?:refactor|migrate|architecture|full.stack|comprehensive|from scratch|entire|implement)\b/i.test(task)
+  const complexity = multiStep
+    ? (/\b(?:comprehensive|architecture audit|entire)\b/i.test(task) || score >= 0.45 ? "max" : "high")
+    : highRisk ? (score >= 0.55 ? "max" : "high") : complexityTier(score, state.previous)
+  const staticFloor = ({ low: 12, medium: 60, high: 240, max: 600 } as const)[complexity]
   return {
     complexity,
-    budgetSeconds: ({ low: 12, medium: 60, high: 240, max: 600 } as const)[complexity],
+    budgetSeconds: latencyBudget(staticFloor, state.latencies),
     parallelWorkers: ({ low: 1, medium: 1, high: 2, max: 4 } as const)[complexity],
-    reason: extensive ? "Multi-step deep work" : sensitive ? "Verification and permissions required" : serious ? "Implementation and tests required" : simple ? "Short direct action" : "Moderate investigation",
-    risk: sensitive ? "sensitive" : "normal",
+    reason: multiStep ? "Multi-step engineering work" : highRisk ? "Risk-sensitive action" : "Weighted deterministic complexity",
+    risk: highRisk ? "sensitive" : "normal",
+    requiresConfirmation: highRisk,
+    score,
   }
 }
 

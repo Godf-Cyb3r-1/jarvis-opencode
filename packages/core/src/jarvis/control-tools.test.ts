@@ -4,14 +4,15 @@ import { Permission } from "../permission"
 import * as JarvisAgent from "./agent"
 import { isWorkerOf, MaxActiveWorkers, Plugin, recoverableQueuedInstruction } from "./control-tools"
 
-test("Jarvis has explicit native control tools but cannot edit or run a shell", () => {
+test("Jarvis has native control, shell and editing tools", () => {
   const rules = JarvisAgent.definition().permissions
   for (const name of ["agent_list", "model_list", "session_create", "session_status", "session_list", "session_send", "session_interrupt", "session_peek", "session_switch_agent", "session_switch_model", "session_compact", "command_run"])
     expect(Permission.evaluate(name, "*", rules).effect).toBe("allow")
   for (const name of ["bash", "write", "edit", "apply_patch", "execute"])
-    expect(Permission.evaluate(name, "*", rules).effect).toBe("deny")
+    expect(Permission.evaluate(name, "*", rules).effect).toBe("ask")
   expect(Plugin.id).toBe("opencode.jarvis.control")
-  expect(MaxActiveWorkers).toBe(4)
+  expect(MaxActiveWorkers).toBeGreaterThanOrEqual(1)
+  expect(MaxActiveWorkers).toBeLessThanOrEqual(16)
 })
 test("worker ownership must match the parent session and worker role", () => {
   const parentID = Session.ID.create()

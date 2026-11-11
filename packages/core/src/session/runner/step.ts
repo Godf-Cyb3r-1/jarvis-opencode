@@ -4,6 +4,7 @@ import {
   AIError,
   InvalidProviderOutputError,
   LLMClient,
+  SystemPart,
   isContextOverflowFailure,
   type ToolCall,
 } from "@opencode/ai/effect"
@@ -26,6 +27,8 @@ import { SessionUsage } from "../usage.js"
 import { SessionRunnerModel } from "./model.js"
 import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { SessionRunnerRetry } from "./retry.js"
+import { shouldRetryRefusal, refusalReminder } from "../../jarvis/refusal-interceptor.js"
+import { bodyFacts } from "../../jarvis/body-schema.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
@@ -78,9 +81,33 @@ export const make = Effect.gen(function* () {
       "gen_ai.provider.name": input.model.ref.providerID,
       "gen_ai.request.model": input.model.ref.id,
     })
+    let refusalRetryAttempted = false
+    const retryJarvisRefusal = (text: string): Effect.Effect<string | undefined> =>
+      Effect.gen(function* () {
+        const admission = input.prepared.request.system.map((part) => part.text).join("\n")
+        const executed = /(?:play\.media\.search|open\.url|open\.app|search\.web|status\.workers): EXECUTED/.test(admission)
+        if (input.agent !== "jarvis" || refusalRetryAttempted || !executed ||
+            !shouldRetryRefusal(text, bodyFacts(["session_create"]), 0)) return undefined
+        refusalRetryAttempted = true
+        const prepared = input.prepared.request
+        // One narration-only retry. The deterministic skill already ran once,
+        // and its KV token prevents duplicate external actions.
+        const revised = {
+          ...prepared,
+          system: [...prepared.system, SystemPart.make(refusalReminder)],
+          toolChoice: { type: "none" as const },
+        }
+        const answer = yield* llm.generate(revised, input.prepared.options).pipe(
+          Effect.map((result) => result.text),
+          Effect.orElseSucceed(() => undefined as string | undefined),
+        )
+        if (!answer?.trim() || /\b(?:i can't|i cannot|i'm unable)\b/i.test(answer)) return "On it."
+        return answer
+      })
     const publisher = createLLMEventPublisher(bus, {
       sessionID: input.sessionID,
       assistantMessageID: input.assistantMessageID,
+      retryJarvisRefusal,
       agent: input.agent,
       model: input.model.ref,
       providerMetadataKey: input.model.model.route.providerMetadataKey ?? input.model.model.provider,
