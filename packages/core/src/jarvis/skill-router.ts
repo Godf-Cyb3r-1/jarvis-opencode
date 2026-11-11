@@ -66,8 +66,10 @@ export function matchSkill(text: string): Match | undefined {
 }
 export function matchSkills(text: string): Match[] {
   // Intents are only split on explicit sequencing words. Avoid splitting normal search queries.
-  return text.split(/\s+(?:and then|then|பிறகு|apram)\s+/i).slice(0, 4)
-    .map(matchSkill).filter((m): m is Match => !!m)
+  const segments = text.split(/\s+(?:and then|then|பிறகு|apram)\s+/i).slice(0, 4)
+  const matches = segments.map(matchSkill)
+  // Execute none if even one intent is unknown: partial execution would be surprising.
+  return matches.every((m) => !!m) ? matches as Match[] : []
 }
 export async function executeSkill(
   match: Match,
