@@ -9,7 +9,7 @@ export interface KVLike {
 }
 export type CachedPlan = {
  signature:string; template:Plan; successCount:number;failCount:number;
- p50LatencyMs:number;p90LatencyMs:number;lastUsedAt:number;
+ p50LatencyMs:number;p90LatencyMs:number;latenciesMs?:number[];lastUsedAt:number;
  machineCapabilitiesAtSave:string;createdAt:number
 }
 export type Fingerprint={signature:string;hash:string;slots:Record<string,string>;tokens:string[]}
@@ -30,7 +30,8 @@ export function fingerprint(source:string):Fingerprint {
  replace(/(?:[a-z]:\\[^\s]+|\/[^\s]+\/[^\s]+)/gi,"path")
  replace(/\b[\w.-]+\.(?:pdf|txt|docx|xlsx|png|jpg|zip|json|js|ts)\b/gi,"file")
  replace(/\b\d+(?:\.\d+)?\b/g,"number")
- replace(/\b(?:tamil|english|hindi|telugu|malayalam|தமிழ்|हिन्दी)\b/gi,"lang")
+ replace(/\b(?:tamil|english|hindi|telugu|malayalam)\b|தமிழ்|हिन्दी/gi,"lang")
+ replace(/\b(?:sad|happy|romantic|melody|classical|rock|folk|instrumental|lofi)\b/gi,"genre")
  const tokens=text.replace(/[^\p{L}\p{N}_ ]/gu," ").split(/\s+/).filter(Boolean)
    .map(x=>x.startsWith("SLOT_")?"{"+x.slice(5)+"}":synonyms[x]??x)
  const signature=tokens.join(" ")
@@ -45,7 +46,10 @@ const prefix="jarvis:v5:plan:"
 export const slotify=(value:unknown,slots:Record<string,string>):unknown=>{
  if(typeof value==="string"){
   let next=value
-  for(const [key,actual] of Object.entries(slots)) if(actual.length>0) next=next.replaceAll(actual,"{{"+key+"}}")
+  for(const [key,actual] of Object.entries(slots)) if(actual.length>0){
+   const escaped=actual.replace(/[.*+?^${}()|[\]\\]/g,"\\  for(const [key,actual] of Object.entries(slots)) if(actual.length>0) next=next.replaceAll(actual,"{{"+key+"}}")")
+   next=next.replace(new RegExp(escaped,"gi"),"{{"+key+"}}")
+  }
   return next
  }
  if(Array.isArray(value))return value.map(item=>slotify(item,slots))
@@ -67,19 +71,21 @@ export async function lookupPlan(kv:KVLike,fp:Fingerprint,capabilities:string,no
  }
  if(valid(exact))return {plan:fillSlots(exact.template,fp.slots) as Plan,entry:exact,hit:"exact" as const}
  const found=await kv.scan({prefix,limit:500})
- for(const item of found.entries){
-  if(!valid(item.value))continue
-  const entry=item.value
-  if(similarity(fp.tokens,entry.signature.split(" "))>=0.85)
-   return {plan:fillSlots(entry.template,fp.slots) as Plan,entry,hit:"warm" as const}
- }
+ const best=found.entries.filter(item=>valid(item.value)).map(item=>({
+  entry:item.value as CachedPlan,
+  similarity:similarity(fp.tokens,(item.value as CachedPlan).signature.split(" ")),
+ })).sort((a,b)=>b.similarity-a.similarity)[0]
+ if(best && best.similarity>=0.85)
+  return {plan:fillSlots(best.entry.template,fp.slots) as Plan,entry:best.entry,hit:"warm" as const}
+
 }
 export async function learnPlan(kv:KVLike,fp:Fingerprint,plan:Plan,capabilities:string,elapsedMs:number,now=Date.now()){
  const old=await kv.get(prefix+fp.hash) as CachedPlan|undefined
- const durations=(old?.p50LatencyMs?[old.p50LatencyMs,old.p90LatencyMs,elapsedMs]:[elapsedMs]).sort((a,b)=>a-b)
+ const durations=[...(old?.latenciesMs??[]).slice(-19),elapsedMs].sort((a,b)=>a-b)
  const stored:CachedPlan={
   signature:fp.signature, template:slotify(plan,fp.slots) as Plan,
   successCount:(old?.successCount??0)+1,failCount:old?.failCount??0,
+  latenciesMs:durations,
   p50LatencyMs:durations[Math.floor(durations.length/2)]!,
   p90LatencyMs:durations[Math.ceil(durations.length*.9)-1]!,
   lastUsedAt:now,createdAt:old?.createdAt??now,machineCapabilitiesAtSave:capabilities,
