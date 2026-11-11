@@ -13,7 +13,7 @@ export function pickAgent(task: string, candidates: readonly AvailableAgent[]): 
     const selected = candidates.find((a) => a.id === id)
     if (selected) return selected
   }
-  return candidates.find((a) => a.id !== "jarvis" && a.id !== "compaction" && a.id !== "title")
+  return candidates.find((a) => !["jarvis","browser","compaction","title","summary"].includes(a.id))
 }
 export type AuditEntry = { action: string; detail: string; at: number }
 export function auditItems(metadata: Record<string, unknown> | undefined): AuditEntry[] {
