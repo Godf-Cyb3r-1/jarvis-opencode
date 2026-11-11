@@ -367,6 +367,7 @@ export const layer = Layer.effect(
         : undefined
       if (machine) system.push(SystemPart.make(firstPersonCapabilities(machine)))
       let verifiedGeneralist = false
+      let handledGeneralist = false
       let generalistAttempted = false
       if (jarvisRequest && kind === "primary" && machine && Option.isSome(kvOption)) {
         const llmOption = yield* Effect.serviceOption(LLMClient.Service)
@@ -410,6 +411,7 @@ export const layer = Layer.effect(
             },
           }))
           verifiedGeneralist = outcome.status === "completed"
+          handledGeneralist = verifiedGeneralist || outcome.status === "delegated"
           yield* kv.set("jarvis:expression:context:v4:"+String(session.id),{
             context:expressionContext(lastUserText,{id:"generalist",success:verifiedGeneralist}),
             turn:userTurn,
@@ -423,10 +425,10 @@ export const layer = Layer.effect(
             JSON.stringify({status:outcome.status,cache:outcome.cache,
               plannerCalls:outcome.plannerCalls,detail:outcome.detail,evidence}).slice(0,4000)+
             "\nReport only these observed facts; do not claim unverified playback, navigation, delivery or UI interactions. "+
-            (verifiedGeneralist?"The executor finished; do not issue competing tool calls.":"If blocked, explain the concrete blocker or dispatch a permitted independent worker.")+
+            (verifiedGeneralist?"The executor finished; do not issue competing tool calls.":outcome.status==="delegated"?"A worker was started, not completed; do not dispatch a duplicate.":"If blocked, explain the concrete blocker or dispatch a permitted independent worker.")+
             "\n[/Actual generalist execution report]",
           ))
-          if (verifiedGeneralist) {
+          if (handledGeneralist) {
             for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
           }
         }
@@ -442,7 +444,7 @@ export const layer = Layer.effect(
       // opening when a generalist plan has already been attempted.
       if (jarvisRequest && generalistAttempted) {
         hooked.delete("jarvis_quick_action")
-        if (verifiedGeneralist) for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
+        if (handledGeneralist) for (const name of [...hooked.keys()]) if (name !== "read") hooked.delete(name)
       }
       // Jarvis evaluates work complexity per user turn, without altering
       // provider-selected model capabilities. The worker tool may pick an
@@ -622,7 +624,7 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: verifiedGeneralist ? { type: "none" } : input.toolChoice,
+        toolChoice: handledGeneralist ? { type: "none" } : input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
       })
