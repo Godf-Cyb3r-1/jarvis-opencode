@@ -93,12 +93,12 @@ export function latencyBudget(floorSeconds: number, latencies: number[] = []): n
 }
 export function planExecution(task: string, state: ScoreState = {}): ExecutionPlan {
   const score = complexityScore(task, state)
-  const highRisk = RISK.test(task)
+  const highRisk = RISK.test(task) || /\b(?:send (?:email|message)|purchase)\b/i.test(task)
   // RegExp global test mutates lastIndex; reset for deterministic repeat calls.
   RISK.lastIndex = 0
-  const multiStep = /\b(?:refactor|migrate|architecture|full.stack|comprehensive|from scratch|entire)\b/i.test(task)
+  const multiStep = /\b(?:refactor|migrate|architecture|full.stack|comprehensive|from scratch|entire|implement)\b/i.test(task)
   const complexity = multiStep
-    ? (score >= 0.45 ? "max" : "high")
+    ? (/\b(?:comprehensive|architecture audit|entire)\b/i.test(task) || score >= 0.45 ? "max" : "high")
     : highRisk ? (score >= 0.55 ? "max" : "high") : complexityTier(score, state.previous)
   const staticFloor = ({ low: 12, medium: 60, high: 240, max: 600 } as const)[complexity]
   return {
