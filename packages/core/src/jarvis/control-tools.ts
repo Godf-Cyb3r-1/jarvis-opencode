@@ -19,6 +19,7 @@ import { auditAppend, auditItems, pickAgent } from "./administration.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-memory.js"
 import { checkInstabox, runInstabox } from "./instabox-runtime.js"
 import { checkKali, runKali, runRouted } from "./windows-execution.js"
+import { runWindowsCommand } from "./windows-command.js"
 import { planExecution, preferredReasoningVariant } from "./fast-path.js"
 import { executeQuickAction } from "./quick-action.js"
 import { registerWorkerAdapter } from "./worker-bridge.js"
@@ -221,6 +222,34 @@ export const Plugin = {
                 "\\nKali: " + output.kaliReady + "; Instabox: " + output.instaboxReady,
             })),
             Effect.mapError((error) => new ToolFailure({ message: "Capability discovery failed: " + String(error), error })),
+          ),
+        })
+      }
+      if (process.platform === "win32") {
+        editor.add({
+          name: "windows_exec",
+          options: { codemode: false },
+          description: "Execute requested native Windows PowerShell commands on the actual Windows desktop host. Use this for git, node, npx, local program discovery, browser and Burp process checks, and Windows application launches. This is not the workspace-scoped file reader or WSL. Report the real exit code and output; never claim success without running it.",
+          input: Schema.Struct({
+            command: Schema.String,
+            cwd: Schema.optionalKey(Schema.String),
+            timeoutMs: Schema.optionalKey(Schema.Number),
+          }),
+          output: Schema.Struct({
+            backend: Schema.Literal("windows"),
+            exitCode: Schema.Number,
+            command: Schema.String,
+            output: Schema.String,
+          }),
+          execute: (input, context) => Effect.gen(function* () {
+            yield* authorize(context.sessionID, context.agent)
+            return yield* Effect.promise(() => runWindowsCommand(input.command, input.cwd, input.timeoutMs))
+          }).pipe(
+            Effect.map((output) => ({
+              output,
+              content: "[Windows exit " + output.exitCode + "]\\n" + (output.output || "(no output)"),
+            })),
+            Effect.mapError((error) => new ToolFailure({ message: "Windows execution failed: " + String(error), error })),
           ),
         })
       }
