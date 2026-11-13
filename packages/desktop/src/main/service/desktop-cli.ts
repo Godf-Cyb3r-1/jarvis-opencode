@@ -1,6 +1,9 @@
 export * as DesktopCli from "./desktop-cli"
 
 import { execFile, spawn } from "node:child_process"
+import { createHash } from "node:crypto"
+import { createReadStream } from "node:fs"
+import { stat } from "node:fs/promises"
 import { existsSync, readFileSync } from "node:fs"
 import { promisify } from "node:util"
 import { app } from "electron"
@@ -136,6 +139,22 @@ const VersionCache = Schema.Struct({ path: Schema.String, identity: Schema.Strin
 
 const ExecFailure = Schema.Struct({ stdout: Schema.optional(Schema.String), stderr: Schema.optional(Schema.String) })
 
+/** On Windows every release has the same upstream CLI version. Compare actual bytes,
+ * not only versioned destination existence, before reusing its cached executable.
+ * Hashing is done only when a staged file already exists.
+ */
+async function identicalCliBytes(source: string, destination: string): Promise<boolean> {
+  const [a, b] = await Promise.all([stat(source), stat(destination)])
+  if (a.size !== b.size) return false
+  const digest = async (file: string) => {
+    const hash = createHash("sha256")
+    for await (const chunk of createReadStream(file)) hash.update(chunk)
+    return hash.digest("hex")
+  }
+  const [sourceHash, destinationHash] = await Promise.all([digest(source), digest(destination)])
+  return sourceHash === destinationHash
+}
+
 const installCli = Effect.fn("DesktopCli.install")(function* (source: string, version: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
@@ -145,9 +164,14 @@ const installCli = Effect.fn("DesktopCli.install")(function* (source: string, ve
   const destination = path.join(directory, executableName())
 
   if (existsSync(destination)) {
-    yield* Effect.logInfo("v2 CLI staged executable reused", { path: destination, version })
-
-    return destination
+    const identical = yield* Effect.tryPromise(() => identicalCliBytes(source, destination))
+    if (identical) {
+      yield* Effect.logInfo("v2 CLI staged executable verified and reused", { path: destination, version })
+      return destination
+    }
+    yield* Effect.logWarning("v2 CLI stage differs from bundled Jarvis engine; refreshing", {
+      source, destination, version,
+    })
   }
 
   const temp = destination + `.${process.pid}.tmp`
@@ -155,6 +179,15 @@ const installCli = Effect.fn("DesktopCli.install")(function* (source: string, ve
   yield* fs.copyFile(source, temp)
 
   if (process.platform !== "win32") yield* fs.chmod(temp, 0o755)
+  // Windows does not replace an existing executable with rename(). Remove the
+  // stale stage first. If it is still running, report the locked process instead
+  // of silently returning the obsolete binary.
+  if (existsSync(destination))
+    yield* fs.remove(destination).pipe(
+      Effect.catch((error) => Effect.fail(new Error(
+        "Old Jarvis CLI cache is still locked. Close all Jarvis/OpenCode windows and stop the old opencode-cli.exe process, then reopen the new build. " + String(error),
+      ))),
+    )
   yield* fs
     .rename(temp, destination)
     .pipe(Effect.catch((error) => fs.remove(temp, { force: true }).pipe(Effect.andThen(Effect.fail(error)))))
