@@ -116,7 +116,7 @@ export const Plugin = {
       // Enforced on the actual host shell path for ALL agents, not only
       // model instructions. Local inspection remains available; installing
       // or building must use the explicit Instabox remote execution tool.
-      if (shouldGuardLocal() && !(process.platform === "win32" && context.agent === "jarvis")) {
+      if (process.platform !== "win32" && shouldGuardLocal()) {
         const route = classifyHostCommand(invocation.command)
         if (route === "instabox-required")
           return yield* Effect.fail(new Error(
