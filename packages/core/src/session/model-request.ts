@@ -498,7 +498,7 @@ export const layer = Layer.effect(
         if(!matchedSkills.length)
           system.push(SystemPart.make("[Raw user text for tool arguments] "+lastUserText))
         system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
-        if (process.platform === "win32") system.push(SystemPart.make("[Jarvis Windows execution inventory]\\nRegistered tools: " + [...hooked.keys()].join(", ") + "\\nLocal Windows desktop apps use native shell/UI workers; simple Linux tasks use kali_exec; heavy Linux tasks use jarvis_exec_routed with Instabox-first availability check. Check real tool availability before claiming it is missing. A worker is a session, not an external machine.\\n[/Jarvis Windows execution inventory]"))
+        if (process.platform === "win32") system.push(SystemPart.make("[Jarvis Windows execution inventory]\nRegistered tools in THIS request: " + [...hooked.keys()].join(", ") + "\nUse windows_exec for native Windows commands even if the generic shell tool is absent. Use kali_status and kali_exec for installed local WSL2 Kali (never infer its absence from workspace file access). Use jarvis_exec_routed for Instabox-first workloads with pre-dispatch WSL fallback. Workers may execute with their real shell permissions; the removed Windows read-only host allowlist must never be represented as active. If tools are not shown, report the registered list and troubleshoot tool registration. Test capability before claiming success.\n[/Jarvis Windows execution inventory]"))
         if (matchedSkills.length) {
           system.push(SystemPart.make(
             "[Deterministic skill admission]\n" +
