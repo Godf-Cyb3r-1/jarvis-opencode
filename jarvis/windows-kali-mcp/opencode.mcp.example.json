@@ -1,17 +1,19 @@
 {
   "mcp": {
-    "jarvis-kali": {
-      "type": "local",
-      "command": [
-        "wsl.exe",
-        "-d",
-        "kali-linux",
-        "--",
-        "bash",
-        "-lc",
-        "exec \"$HOME/.local/share/jarvis-kali-mcp/.venv/bin/python\" \"$HOME/.local/share/jarvis-kali-mcp/server.py\""
-      ],
-      "enabled": true
+    "servers": {
+      "jarvis-kali": {
+        "type": "local",
+        "command": [
+          "wsl.exe",
+          "-d",
+          "kali-linux",
+          "--",
+          "bash",
+          "-lc",
+          "exec \"$HOME/.local/share/jarvis-kali-mcp/.venv/bin/python\" \"$HOME/.local/share/jarvis-kali-mcp/server.py\""
+        ],
+        "disabled": false
+      }
     }
   }
 }
