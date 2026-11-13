@@ -18,6 +18,7 @@ import { findMemories, forget, remember } from "./memory.js"
 import { auditAppend, auditItems, pickAgent } from "./administration.js"
 import { resolveMemory, mirrorMemory, pendingKey, cloudEnabled } from "./cloud-memory.js"
 import { checkInstabox, runInstabox } from "./instabox-runtime.js"
+import { checkKali, runKali, runRouted } from "./windows-execution.js"
 import { planExecution, preferredReasoningVariant } from "./fast-path.js"
 import { executeQuickAction } from "./quick-action.js"
 import { registerWorkerAdapter } from "./worker-bridge.js"
@@ -195,6 +196,53 @@ export const Plugin = {
             Effect.mapError((error) => new ToolFailure({ message: "Instabox remote execution unavailable: " + String(error), error })),
           ),
       })
+      if (process.platform === "win32") {
+        editor.add({
+          name: "kali_status",
+          options: { codemode: false },
+          description: "Check real WSL2 Kali availability; use this rather than assuming the assistant has no Linux tools.",
+          input: Schema.Struct({}),
+          output: Schema.Struct({ ready: Schema.Boolean, distro: Schema.String, message: Schema.String }),
+          execute: (_, context) => Effect.gen(function* () {
+            yield* authorize(context.sessionID, context.agent)
+            return yield* Effect.promise(() => checkKali())
+          }).pipe(
+            Effect.map((output) => ({ output, content: output.message })),
+            Effect.mapError((error) => new ToolFailure({ message: "Kali status failed: " + String(error), error })),
+          ),
+        })
+        editor.add({
+          name: "kali_exec",
+          options: { codemode: false },
+          description: "Execute normal Linux commands and security utilities inside the user's local WSL2 Kali distro, not Windows. Use for light/local tasks; returns real output.",
+          input: Schema.Struct({ command: Schema.String }),
+          output: Schema.Struct({ backend: Schema.String, output: Schema.String }),
+          execute: (input, context) => Effect.gen(function* () {
+            yield* authorize(context.sessionID, context.agent)
+            return yield* Effect.promise(() => runKali(input.command))
+          }).pipe(
+            Effect.map((output) => ({ output, content: output.output || "Kali command finished with no output." })),
+            Effect.mapError((error) => new ToolFailure({ message: "Kali command failed: " + String(error), error })),
+          ),
+        })
+        editor.add({
+          name: "jarvis_exec_routed",
+          options: { codemode: false },
+          description: "Run Linux commands in Instabox by default for compute work, falling back to WSL2 Kali ONLY when Instabox is unavailable before launch. Use target=wsl-kali for light commands. Do not replay an uncertain or failed remote operation.",
+          input: Schema.Struct({
+            command: Schema.String,
+            target: Schema.optionalKey(Schema.Literals(["auto", "instabox", "wsl-kali"])),
+          }),
+          output: Schema.Struct({ backend: Schema.String, output: Schema.String }),
+          execute: (input, context) => Effect.gen(function* () {
+            yield* authorize(context.sessionID, context.agent)
+            return yield* Effect.promise(() => runRouted(input.command, input.target))
+          }).pipe(
+            Effect.map((output) => ({ output, content: "[" + output.backend + "]\\n" + (output.output || "Completed with no output.") })),
+            Effect.mapError((error) => new ToolFailure({ message: "Routed execution failed: " + String(error), error })),
+          ),
+        })
+      }
       editor.add({
         name: "jarvis_plan",
         options: { codemode: false },
