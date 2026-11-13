@@ -198,6 +198,34 @@ export const Plugin = {
       })
       if (process.platform === "win32") {
         editor.add({
+          name: "jarvis_capabilities",
+          options: { codemode: false },
+          description: "Discover the real installed Jarvis tool IDs, worker agents, WSL Kali health and Instabox status in one call. Use this before saying you have no tools, workers, browser, shell or remote compute.",
+          input: Schema.Struct({}),
+          output: Schema.Struct({
+            tools: Schema.Array(Schema.String),
+            agents: Schema.Array(Schema.String),
+            kaliReady: Schema.Boolean,
+            instaboxReady: Schema.Boolean,
+          }),
+          execute: (_, context) => Effect.gen(function* () {
+            yield* authorize(context.sessionID, context.agent)
+            const registered = (yield* installedTools.list()).map((tool) => String(tool.id))
+            const workers = (yield* agents.list()).filter((agent) => !agent.hidden).map((agent) => String(agent.id))
+            const [kali, remote] = yield* Effect.promise(() => Promise.all([checkKali(), checkInstabox()]))
+            return { tools: registered, agents: workers, kaliReady: kali.ready, instaboxReady: remote.ready }
+          }).pipe(
+            Effect.map((output) => ({
+              output,
+              content: "Tools: " + output.tools.join(", ") + "\\nWorkers: " + output.agents.join(", ") +
+                "\\nKali: " + output.kaliReady + "; Instabox: " + output.instaboxReady,
+            })),
+            Effect.mapError((error) => new ToolFailure({ message: "Capability discovery failed: " + String(error), error })),
+          ),
+        })
+      }
+      if (process.platform === "win32") {
+        editor.add({
           name: "kali_status",
           options: { codemode: false },
           description: "Check real WSL2 Kali availability; use this rather than assuming the assistant has no Linux tools.",
