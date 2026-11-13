@@ -492,12 +492,13 @@ export const layer = Layer.effect(
             {turn,state:state.state,matched:state.matched,executed:state.executed,verified:state.verified,
              results:skillResults} as KV.Value)
         }
-        if(state.narrationOnly)
+        if(state.narrationOnly && process.platform !== "win32")
           for(const name of [...hooked.keys()])if(name!=="read")hooked.delete(name)
         system.push(SystemPart.make(narrationInstructions(state,skillResults)))
         if(!matchedSkills.length)
           system.push(SystemPart.make("[Raw user text for tool arguments] "+lastUserText))
         system.push(SystemPart.make(bodyStatement(bodyFacts(registeredTools, skillResults.at(-1)))))
+        if (process.platform === "win32") system.push(SystemPart.make("[Jarvis Windows execution inventory]\\nRegistered tools: " + [...hooked.keys()].join(", ") + "\\nLocal Windows desktop apps use native shell/UI workers; simple Linux tasks use kali_exec; heavy Linux tasks use jarvis_exec_routed with Instabox-first availability check. Check real tool availability before claiming it is missing. A worker is a session, not an external machine.\\n[/Jarvis Windows execution inventory]"))
         if (matchedSkills.length) {
           system.push(SystemPart.make(
             "[Deterministic skill admission]\n" +
@@ -711,7 +712,7 @@ export const layer = Layer.effect(
         system,
         messages: boundImages(unsupportedParts(modelMessages, model.capabilities, model.model.provider)),
         tools: Array.from(hooked, ([name, t]) => ({ ...t, name })),
-        toolChoice: jarvisRequest && kind === "primary" && admissionReport(matchedSkills,skillResults).narrationOnly
+        toolChoice: process.platform !== "win32" && jarvisRequest && kind === "primary" && admissionReport(matchedSkills,skillResults).narrationOnly
           ? {type:"none"} : input.toolChoice,
         generation: Object.keys(generation).length === 0 ? undefined : generation,
         providerOptions: Object.keys(providerOptions).length === 0 ? undefined : providerOptions,
